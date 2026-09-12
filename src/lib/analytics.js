@@ -62,7 +62,7 @@ export const districtDemand = (data) => {
   }, {});
   (data.jobPostings || []).forEach((posting) => {
     const district = posting.district || "Unspecified";
-    acc[district] = (acc[district] || 0) + (Number(posting.openings) || 1);
+    result[district] = (result[district] || 0) + (Number(posting.openings) || 1);
   });
   return result;
 };
