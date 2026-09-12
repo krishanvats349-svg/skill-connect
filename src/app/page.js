@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { getSkill, initialData, navItems, normalizeData, roleLabels, roleRequirements, skillCatalog, skillNames } from "@/lib/data";
-import { capacityRows, candidateAnalysis, courseAnalysis, curriculumAnalysis, demandRows, districtDemand, districtPriorityRows, executiveMetrics, feedbackIntelligence, feedbackSummary, hierarchyOptions, pipelineConversions, pipelineMetrics, priorityActions, prototypeImpactScore, requiredIndustrySkills, simulateIntervention, skillIntelligenceRows, skillPulseDetail, totalOpenings, trainerAnalysis } from "@/lib/analytics";
+import { capacityRows, candidateAnalysis, courseAnalysis, courseSupplyStatus, curriculumAnalysis, demandRows, districtDemand, districtPriorityRows, executiveMetrics, feedbackIntelligence, feedbackSummary, generateDistrictTrainingPlan, hierarchyOptions, pipelineConversions, pipelineMetrics, priorityActions, prototypeImpactScore, requiredIndustrySkills, simulateIntervention, skillIntelligenceRows, skillPulseDetail, totalOpenings, trainerAnalysis } from "@/lib/analytics";
 import { firebaseEnabled } from "@/lib/firebase";
 import { loadRemoteData, persistEntity, storageMode } from "@/lib/storage";
 import SkillPulseCommandCenter from "@/app/skill-pulse";
@@ -53,10 +53,9 @@ function SkillPulseView({ data }) {
 }
 function Simulator({ data, selectedSkill, setSelectedSkill, scenario, setScenario, selectScenario, simulation, detail }) { const chain = [["Industry demand", true], ["Skill gap", simulation.projected.gap > 0], ["Training intervention", scenario.additionalSeats > 0 || scenario.additionalTrainers > 0 || Boolean(scenario.curriculumSkill)], ["Trainer readiness", simulation.projected.trainerCoverage > detail.coverage.trainers], ["Candidate readiness", simulation.projected.candidatesCovered > 0], ["Placement potential", simulation.projected.gap <= 0 || simulation.projected.candidateGapReduction > 50]]; return <Card className="simulator-card"><div className="section-head"><div><div className="eyebrow">SIMULATION — DOES NOT MODIFY LIVE DATA</div><h2>Intervention simulator</h2><p>Change hypothetical inputs to project how the selected skill could respond. No Firestore or local records are written.</p></div><Badge tone="yellow">Scenario mode</Badge></div><div className="scenario-buttons"><button onClick={() => selectScenario("capacity")}>Expand training capacity</button><button onClick={() => selectScenario("trainer")}>Add trainer upskilling</button><button onClick={() => selectScenario("curriculum")}>Curriculum skill update</button></div><div className="simulator-controls"><label>Selected skill<select value={selectedSkill} onChange={(event) => setSelectedSkill(event.target.value)}>{data.skills.filter((skill) => requiredIndustrySkills(data).includes(skill.id)).map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></label><label>Additional training seats<input type="number" min="0" max="100" value={scenario.additionalSeats} onChange={(event) => setScenario((current) => ({ ...current, additionalSeats: Number(event.target.value) || 0 }))} /></label><label>Additional trainers<input type="number" min="0" max="20" value={scenario.additionalTrainers} onChange={(event) => setScenario((current) => ({ ...current, additionalTrainers: Number(event.target.value) || 0 }))} /></label><label>Curriculum improvement<select value={scenario.curriculumSkill} onChange={(event) => setScenario((current) => ({ ...current, curriculumSkill: event.target.value }))}><option value="">No curriculum change</option>{data.skills.filter((skill) => requiredIndustrySkills(data).includes(skill.id)).map((skill) => <option key={skill.id} value={skill.id}>Add {skill.name}</option>)}</select></label></div><div className="before-after"><div><div className="eyebrow">CURRENT STATE</div><h3>{detail.skill.name}</h3><p>Capacity: <b>{detail.availableSeats}</b> · Gap: <b>{Math.max(detail.capacityGap, 0)}</b></p><Progress value={detail.openings ? detail.availableSeats / detail.openings * 100 : 0} tone="coral" /></div><div><div className="eyebrow">SIMULATED STATE</div><h3>{detail.skill.name}</h3><p>Capacity: <b>{simulation.projected.availableSeats}</b> · Gap: <b>{Math.max(simulation.projected.gap, 0)}</b></p><Progress value={detail.openings ? simulation.projected.availableSeats / detail.openings * 100 : 0} tone="green" /></div></div><div className="sim-impact"><div><span>Candidate gap reduction</span><strong>{simulation.projected.candidateGapReduction}%</strong></div><div><span>Projected trainer coverage</span><strong>{simulation.projected.trainerCoverage}</strong></div><div><span>Projected course alignment</span><strong>{simulation.projected.courseAlignment}%</strong></div><div><span>Potentially covered</span><strong>{simulation.projected.candidatesCovered} candidates</strong></div></div><div className="impact-chain">{chain.map(([label, active], index) => <div className={active ? "chain-node active" : "chain-node"} key={label}><span>{index + 1}</span><b>{label}</b>{index < chain.length - 1 && <i>→</i>}</div>)}</div><div className="simulation-insight"><b>Why this matters</b><p>{simulation.explanation} This is a projected result based on current prototype data, not a guaranteed real-world outcome.</p></div></Card>; }
 function GovernmentView({ view, data, setView }) {
-  const demand = demandRows(data); const required = requiredIndustrySkills(data); const capacity = capacityRows(data); const districts = districtDemand(data); const feedback = feedbackSummary(data);
   if (view === "overview") return <ExecutiveView data={data} setView={setView} />;
   if (view === "skill-pulse") return <SkillPulseCommandCenter data={data} />;
-  if (view === "labour-market") return <><PageHeader eyebrow="Government intelligence" title="Labour market intelligence" description="All indicators below are aggregated from actual employer consultation records." /><div className="metrics-grid"><Metric label="Total openings" value={totalOpenings(data)} detail="from submitted consultations" tone="coral" /><Metric label="Employers" value={new Set(data.consultations.map((item) => item.employerId)).size} detail="with active demand" /><Metric label="Roles" value={new Set(data.consultations.map((item) => item.role || item.title)).size} detail="in the district signal" tone="green" /></div><Card><div className="section-head"><div><h2>Demand by district</h2><p>Opening totals grouped from consultation district IDs.</p></div></div>{Object.entries(districts).map(([district, openings]) => <div className="course-row" key={district}><div className="course-icon">⌖</div><div><b>{district}</b><p>{data.consultations.filter((item) => item.district === district).length} consultation(s)</p></div><strong>{openings} openings</strong><Badge>{district === "Pune" ? "Pilot" : "Tracked"}</Badge></div>)}</Card><Card><Table><thead><tr><th>Skill</th><th>Demand</th><th>Employers</th><th>Level</th></tr></thead><tbody>{demand.map((row) => <tr key={row.skillId}><td><b>{row.skill.name}</b></td><td>{row.openings} openings</td><td>{row.employers}</td><td><Badge tone={row.level === "High" ? "coral" : "yellow"}>{row.level}</Badge></td></tr>)}</tbody></Table></Card></>;
+  if (view === "labour-market") return <LabourMarketView data={data} />;
   if (view === "skill-intelligence") return <SkillIntelligenceView data={data} />;
   if (view === "skill-gap") return <SkillGapView data={data} />;
   if (view === "course-intelligence" || view === "curriculum") return <AlignmentView type={view} data={data} />;
@@ -66,17 +65,868 @@ function GovernmentView({ view, data, setView }) {
 }
 
 function SkillGapView({ data }) { const required = requiredIndustrySkills(data); const courses = data.courses.flatMap((course) => course.skillIds); const curriculum = data.curriculums[0]; return <><PageHeader eyebrow="Government intelligence" title="Skill gap analysis" description="Industry demand is compared with course, curriculum, trainer, and candidate coverage." /><Card><Table><thead><tr><th>Skill</th><th>Industry demand</th><th>Courses</th><th>Curriculum</th><th>Trainers</th><th>Priority</th></tr></thead><tbody>{required.map((skillId) => { const courseCovered = courses.includes(skillId); const curriculumCovered = curriculum?.skillIds.includes(skillId); const trainerCount = data.trainers.filter((trainer) => trainer.skillIds.includes(skillId)).length; const candidateCount = data.candidates.filter((candidate) => candidate.skillIds.includes(skillId)).length; const gapCount = [courseCovered, curriculumCovered, trainerCount > 0, candidateCount > 0].filter(Boolean).length; return <tr key={skillId}><td><b>{getSkill(skillId).name}</b></td><td><Badge tone="coral">Demanded</Badge></td><td>{courseCovered ? "Covered" : "Missing"}</td><td>{curriculumCovered ? "Covered" : "Missing"}</td><td>{trainerCount} trainer(s)</td><td><Badge tone={gapCount < 2 ? "coral" : gapCount < 4 ? "yellow" : "green"}>{gapCount < 2 ? "Critical" : gapCount < 4 ? "Watch" : "Covered"}</Badge></td></tr>; })}</tbody></Table></Card><Card><div className="section-head"><div><h2>Power BI explanation</h2><p>Why this skill is a current intervention priority.</p></div><Badge tone="coral">Actionable gap</Badge></div><div className="recommendation"><span className="action-icon coral">!</span><div><b>Power BI is demanded by {data.consultations.filter((item) => item.requiredSkillIds.includes("power-bi")).length} consultation(s)</b><p>{data.courses.filter((course) => course.skillIds.includes("power-bi")).length} course(s) cover it, the current curriculum {curriculum?.skillIds.includes("power-bi") ? "covers it" : "does not cover it"}, and {data.trainers.filter((trainer) => trainer.skillIds.includes("power-bi")).length} trainer(s) are ready. Add Power BI/Data Visualization to the curriculum when curriculum coverage is missing.</p></div></div></Card></>; }
-function AlignmentView({ type, data }) { const items = type === "curriculum" ? data.curriculums : data.courses; return <><PageHeader eyebrow="Government intelligence" title={type === "curriculum" ? "Curriculum alignment" : "Course intelligence"} description="Alignment is matched required skills divided by total required industry skills." /><div className="course-grid">{items.map((item) => { const result = type === "curriculum" ? curriculumAnalysis(item, data) : courseAnalysis(item, data); return <Card key={item.id}><div className="course-title"><span className="course-icon">▤</span><div><h2>{item.name}</h2><p>{item.duration || item.owner || "Industry pathway"}</p></div></div><div className="course-score"><strong>{result.alignment}%</strong><span>{type === "curriculum" ? "curriculum alignment" : "course alignment"}</span></div><Progress value={result.alignment} tone={result.alignment >= 80 ? "green" : "yellow"} /><p className="explain">Matched: {result.covered.length ? skillNames(result.covered).join(", ") : "None"}. Missing: {result.missing.length ? skillNames(result.missing).join(", ") : "None"}.</p>{result.missing.length > 0 && <div className="recommendation"><span className="action-icon yellow">→</span><div><b>Recommended addition</b><p>Add {skillNames(result.missing).join(" and ")} to improve alignment with current employer demand.</p></div></div>}<SkillTags ids={item.skillIds} /></Card>; })}</div></>; }
-function CapacityView({ type, data }) { const rows = capacityRows(data); const districts = districtDemand(data); return <><PageHeader eyebrow="Government intelligence" title={type === "district" ? "District intelligence" : "Training capacity"} description="Demand minus available training capacity, calculated from connected Pune records." /><div className="metrics-grid"><Metric label="Pune demand" value={districts.Pune || 0} detail="openings from consultations" tone="coral" /><Metric label="Available seats" value={rows.reduce((sum, row) => sum + row.availableSeats, 0)} detail="across required skills" /><Metric label="Net capacity gap" value={rows.reduce((sum, row) => sum + row.gap, 0)} detail="demand minus seats" tone="yellow" /></div><Card><Table><thead><tr><th>Skill</th><th>Demand</th><th>Available</th><th>Gap</th><th>Recommendation</th></tr></thead><tbody>{rows.map((row) => <tr key={row.skillId}><td><b>{row.skill.name}</b></td><td>{row.openings}</td><td>{row.availableSeats}</td><td><Badge tone={row.gap > 0 ? "coral" : "green"}>{row.gap > 0 ? `-${row.gap}` : `+${Math.abs(row.gap)}`}</Badge></td><td className="muted">{row.gap > 0 ? `Add ${row.gap} seats` : "Capacity meets demand"}</td></tr>)}</tbody></Table></Card></>; }
+function LabourMarketView({ data }) {
+  const demand = demandRows(data);
+  const total = totalOpenings(data);
+  const consultOpenings = (data.consultations || []).reduce((sum, item) => sum + (Number(item.openings) || 0), 0);
+  const postingsOpenings = (data.jobPostings || []).reduce((sum, item) => sum + (Number(item.openings) || 1), 0);
+  const postings = data.jobPostings || [];
+  const sectors = data.sectorGrowth || [];
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Government intelligence"
+        title="Labour market intelligence"
+        description="Aggregated hiring signals combining direct employer consultations, web job postings, and state sector reports."
+      />
+
+      <Card style={{ background: "#e8f3ef", border: "1px solid #79c8a8", marginBottom: "18px" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <span style={{ fontSize: "20px", color: "var(--teal)" }}>ℹ</span>
+          <div>
+            <b style={{ color: "var(--navy)", fontSize: "12px" }}>Simulated Real-Time Labour Market Ingestion Pipeline</b>
+            <p style={{ color: "var(--navy)", fontSize: "11px", margin: "3px 0 0" }}>
+              Demo data below simulates a job-posting/NCS/PLFS integration. Replace externalSignals.js with a live ingestion job in production.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="metrics-grid">
+        <Metric label="Total market demand" value={total} detail="consultations + crawled postings" tone="coral" />
+        <Metric label="Employer consultations" value={consultOpenings} detail="direct submitted cohort demand" tone="blue" />
+        <Metric label="Ingested job postings" value={postingsOpenings} detail="from NCS & job boards" tone="green" />
+        <Metric label="Monitored sectors" value={sectors.length} detail="state-level growth tracking" tone="yellow" />
+      </div>
+
+      <div className="section-head" style={{ marginTop: "24px" }}>
+        <div>
+          <h2>Sector Growth & Macro Projections (PLFS / MSDE)</h2>
+          <p>YoY expansion rate and emerging technology signals across Maharashtra.</p>
+        </div>
+        <Badge tone="green">State growth data</Badge>
+      </div>
+      <div className="course-grid" style={{ marginBottom: "24px" }}>
+        {sectors.map((sec) => (
+          <Card key={sec.sector}>
+            <div className="section-head">
+              <div>
+                <div className="eyebrow">ANNUAL GROWTH: +{sec.yoyGrowthPercent}%</div>
+                <h2>{sec.sector}</h2>
+                <p>{sec.projectedHiring}</p>
+              </div>
+              <Badge tone="yellow">+{sec.yoyGrowthPercent}% YoY</Badge>
+            </div>
+            <p className="explain"><b>Primary Growth Driver:</b> {sec.driver}</p>
+            <div style={{ margin: "12px 0" }}>
+              <small style={{ display: "block", color: "var(--muted)", marginBottom: "6px", fontWeight: "700" }}>Emerging Skill Signals:</small>
+              <SkillTags ids={sec.emergingSkillIds} />
+            </div>
+            <small style={{ display: "block", color: "#8a9992", fontSize: "10px", marginTop: "12px", borderTop: "1px solid var(--line)", paddingTop: "8px" }}>
+              Source: {sec.source}
+            </small>
+          </Card>
+        ))}
+      </div>
+
+      <Card style={{ marginBottom: "24px" }}>
+        <div className="section-head">
+          <div>
+            <h2>Ingested Job Postings (National Career Service & Web Crawl)</h2>
+            <p>Real-time market signals parsed into canonical platform Skill IDs.</p>
+          </div>
+          <Badge tone="coral">{postings.length} live posting(s)</Badge>
+        </div>
+        <Table>
+          <thead>
+            <tr>
+              <th>Job Title</th>
+              <th>Employer / Organization</th>
+              <th>District</th>
+              <th>Parsed Canonical Skills</th>
+              <th>Vacancies</th>
+              <th>Ingestion Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {postings.map((post) => (
+              <tr key={post.id}>
+                <td>
+                  <b>{post.title}</b>
+                  <small className="table-sub">Posted {post.postedAt}</small>
+                </td>
+                <td>{post.company}</td>
+                <td>{post.district}</td>
+                <td><SkillTags ids={post.skillIds} /></td>
+                <td><strong>{post.openings}</strong></td>
+                <td><Badge tone="blue">{post.source}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+
+      <Card>
+        <div className="section-head">
+          <div>
+            <h2>Combined Industry Skill Demand Matrix</h2>
+            <p>Multi-source demand aggregation feeding Skill Pulse, Course Alignment, and District Plans.</p>
+          </div>
+          <Badge>Canonical Skill IDs</Badge>
+        </div>
+        <Table>
+          <thead>
+            <tr>
+              <th>Skill</th>
+              <th>Total Openings</th>
+              <th>Consultation Demand</th>
+              <th>Job Posting Signal</th>
+              <th>Demand Level</th>
+            </tr>
+          </thead>
+          <tbody>
+            {demand.map((row) => (
+              <tr key={row.skillId}>
+                <td><b>{row.skill.name}</b></td>
+                <td><strong>{row.openings} openings</strong></td>
+                <td>{(data.consultations || []).filter((c) => c.requiredSkillIds?.includes(row.skillId)).reduce((s, c) => s + (Number(c.openings) || 0), 0)} openings</td>
+                <td>{(data.jobPostings || []).filter((p) => p.skillIds?.includes(row.skillId)).reduce((s, p) => s + (Number(p.openings) || 1), 0)} openings</td>
+                <td><Badge tone={row.level === "High" ? "coral" : "yellow"}>{row.level}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+    </>
+  );
+}
+
+function DistrictTrainingPlanReport({ plan, onClose }) {
+  return (
+    <div className="training-plan-print" style={{ marginBottom: "22px" }}>
+      <Card className="plan-report-card">
+        <div className="section-head">
+          <div>
+            <div className="eyebrow">GOVERNMENT OF MAHARASHTRA · SKILL ACTION PLAN</div>
+            <h2>District Skilling & Training Plan: {plan.district}</h2>
+            <p>Generated: {plan.generatedAt} · Dept of Skills, Employment, Entrepreneurship & Innovation (PS 26134)</p>
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button onClick={() => window.print()}>⎙ Export Official Plan (Print / PDF)</Button>
+            {onClose && <Button variant="secondary" onClick={onClose}>Close Report</Button>}
+          </div>
+        </div>
+
+        <div className="plan-summary-grid">
+          <div className="plan-summary-box">
+            <span>District Openings</span>
+            <strong>{plan.demandSummary.totalOpenings}</strong>
+          </div>
+          <div className="plan-summary-box">
+            <span>Active Hiring Employers</span>
+            <strong>{plan.demandSummary.activeEmployers}</strong>
+          </div>
+          <div className="plan-summary-box">
+            <span>Capacity Deficit Skills</span>
+            <strong>{plan.capacityGaps.length}</strong>
+          </div>
+          <div className="plan-summary-box">
+            <span>Flagged Courses</span>
+            <strong>{plan.obsoleteCoursesToRetire.length}</strong>
+          </div>
+        </div>
+
+        <div className="plan-section">
+          <h3>1. Regional Industry Demand Overview</h3>
+          <p className="muted" style={{ marginBottom: "10px" }}>Primary hiring roles: {plan.demandSummary.primaryRoles.join(", ") || "Data Operations"}</p>
+          <Table>
+            <thead>
+              <tr>
+                <th>Top Demanded Skill</th>
+                <th>Openings (Consultations + Ingested)</th>
+                <th>Priority Tier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.demandSummary.topDemandedSkills.map((s) => (
+                <tr key={s.name}>
+                  <td><b>{s.name}</b></td>
+                  <td>{s.openings} vacancies</td>
+                  <td><Badge tone={s.level === "High" ? "coral" : "yellow"}>{s.level} Priority</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+
+        <div className="plan-section">
+          <h3>2. Seat Capacity Expansion Directives</h3>
+          <Table>
+            <thead>
+              <tr>
+                <th>Skill</th>
+                <th>Current Seats</th>
+                <th>Demand Shortage</th>
+                <th>Recommended Expansion</th>
+                <th>Directive Rationale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.recommendedSeatIncreases.length ? plan.recommendedSeatIncreases.map((rec) => (
+                <tr key={rec.skillId}>
+                  <td><b>{rec.skillName}</b></td>
+                  <td>{rec.currentSeats} seats</td>
+                  <td><Badge tone="coral">-{rec.recommendedIncrease} deficit</Badge></td>
+                  <td><strong>+{rec.recommendedIncrease} seats</strong> (Target: {rec.targetCapacity})</td>
+                  <td className="muted">{rec.reason}</td>
+                </tr>
+              )) : <tr><td colSpan={5}>Training capacity meets current demand across all skills.</td></tr>}
+            </tbody>
+          </Table>
+        </div>
+
+        <div className="plan-section">
+          <h3>3. Trainer Upskilling & Capacity Building Directives</h3>
+          <Table>
+            <thead>
+              <tr>
+                <th>Trainer</th>
+                <th>Experience</th>
+                <th>Recommended Upskilling</th>
+                <th>Target Skills</th>
+                <th>Intervention Rationale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.recommendedTrainerUpskilling.length ? plan.recommendedTrainerUpskilling.map((rec) => (
+                <tr key={rec.trainerId}>
+                  <td><b>{rec.trainerName}</b></td>
+                  <td>{rec.experience}</td>
+                  <td><Badge tone="yellow">Upskilling Required</Badge></td>
+                  <td>{rec.missingSkills.join(", ")}</td>
+                  <td className="muted">{rec.reason}</td>
+                </tr>
+              )) : <tr><td colSpan={5}>All district instructional staff are fully aligned with current demand.</td></tr>}
+            </tbody>
+          </Table>
+        </div>
+
+        <div className="plan-section">
+          <h3>4. State Curriculum Modernization Directives</h3>
+          <Table>
+            <thead>
+              <tr>
+                <th>Curriculum Framework</th>
+                <th>Owner / Authority</th>
+                <th>Current Alignment</th>
+                <th>Directive</th>
+                <th>Rationale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.recommendedCurriculumChanges.length ? plan.recommendedCurriculumChanges.map((rec) => (
+                <tr key={rec.curriculumId}>
+                  <td><b>{rec.curriculumName}</b></td>
+                  <td>{rec.owner}</td>
+                  <td><strong style={{ color: "var(--teal)" }}>{rec.alignment}%</strong></td>
+                  <td>{rec.action}</td>
+                  <td className="muted">{rec.reason}</td>
+                </tr>
+              )) : <tr><td colSpan={5}>All curricula meet 100% industry alignment.</td></tr>}
+            </tbody>
+          </Table>
+        </div>
+
+        <div className="plan-section">
+          <h3>5. Course Rationalization & Decommissioning Directives</h3>
+          <Table>
+            <thead>
+              <tr>
+                <th>Course Name</th>
+                <th>Enrolment / Seats</th>
+                <th>Status</th>
+                <th>Decommissioning / Rationalization Action</th>
+                <th>Deterministic Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plan.obsoleteCoursesToRetire.length ? plan.obsoleteCoursesToRetire.map((rec) => (
+                <tr key={rec.courseId}>
+                  <td><b>{rec.courseName}</b></td>
+                  <td>{rec.enrolled} / {rec.seats}</td>
+                  <td><Badge tone={rec.status === "Obsolete" ? "coral" : "yellow"}>{rec.status}</Badge></td>
+                  <td><b>{rec.action}</b></td>
+                  <td className="muted">{rec.reason}</td>
+                </tr>
+              )) : <tr><td colSpan={5}>No obsolete or oversupplied courses detected in this district.</td></tr>}
+            </tbody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function AlignmentView({ type, data }) {
+  const items = type === "curriculum" ? data.curriculums : data.courses;
+  return (
+    <>
+      <PageHeader
+        eyebrow="Government intelligence"
+        title={type === "curriculum" ? "Curriculum alignment" : "Course intelligence"}
+        description="Alignment is matched required skills divided by total required industry skills."
+      />
+      <div className="course-grid">
+        {items.map((item) => {
+          const result = type === "curriculum" ? curriculumAnalysis(item, data) : courseAnalysis(item, data);
+          const supply = type !== "curriculum" ? courseSupplyStatus(item, data) : null;
+          return (
+            <Card key={item.id}>
+              <div className="course-title">
+                <span className="course-icon">▤</span>
+                <div style={{ flex: 1 }}>
+                  <h2>{item.name || item.title}</h2>
+                  <p>{item.duration || item.owner || "Industry pathway"}</p>
+                </div>
+                {supply && (
+                  <Badge tone={supply.status === "Obsolete" || supply.status === "Undersupplied" ? "coral" : supply.status === "Oversupplied" ? "yellow" : "green"}>
+                    {supply.status}
+                  </Badge>
+                )}
+              </div>
+              <div className="course-score">
+                <strong>{result.alignment}%</strong>
+                <span>{type === "curriculum" ? "curriculum alignment" : "course alignment"}</span>
+              </div>
+              <Progress value={result.alignment} tone={result.alignment >= 80 ? "green" : "yellow"} />
+              {supply && (
+                <div style={{ background: "#f5f8f5", border: "1px solid var(--line)", borderRadius: "6px", padding: "8px 12px", margin: "12px 0", fontSize: "11px", color: "var(--navy)" }}>
+                  <b>Supply evaluation:</b> {supply.reason}
+                </div>
+              )}
+              <p className="explain">
+                Matched: {result.covered.length ? skillNames(result.covered).join(", ") : "None"}. Missing: {result.missing.length ? skillNames(result.missing).join(", ") : "None"}.
+              </p>
+              {result.missing.length > 0 && (
+                <div className="recommendation">
+                  <span className="action-icon yellow">→</span>
+                  <div>
+                    <b>Recommended addition</b>
+                    <p>Add {skillNames(result.missing).join(" and ")} to improve alignment with current employer demand.</p>
+                  </div>
+                </div>
+              )}
+              <SkillTags ids={item.skillIds} />
+            </Card>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function CapacityView({ type, data }) {
+  const rows = capacityRows(data);
+  const districts = districtDemand(data);
+  const [showPlan, setShowPlan] = useState(false);
+  const [planDistrict, setPlanDistrict] = useState("Pune");
+  const plan = generateDistrictTrainingPlan(planDistrict, data);
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Government intelligence"
+        title={type === "district" ? "District intelligence" : "Training capacity"}
+        description="Demand minus available training capacity, calculated from connected Pune records."
+        action={
+          type === "district" ? (
+            <Button onClick={() => setShowPlan(!showPlan)}>
+              {showPlan ? "Hide Training Plan" : "⚡ Generate District Training Plan"}
+            </Button>
+          ) : null
+        }
+      />
+
+      {type === "district" && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", background: "#fff", padding: "12px 18px", borderRadius: "8px", border: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <label style={{ fontSize: "12px", fontWeight: "700", color: "var(--muted)" }}>Target District:</label>
+            <select
+              value={planDistrict}
+              onChange={(e) => setPlanDistrict(e.target.value)}
+              style={{ padding: "6px 12px", borderRadius: "5px", border: "1px solid var(--line)", background: "#fbfdfb", fontSize: "12px" }}
+            >
+              {(data.districts || [{ id: "pune", name: "Pune" }]).map((d) => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <Badge tone="green">SIH PS 26134 Core Deliverable</Badge>
+        </div>
+      )}
+
+      {showPlan && <DistrictTrainingPlanReport plan={plan} onClose={() => setShowPlan(false)} />}
+
+      <div className="metrics-grid">
+        <Metric label={`${planDistrict} demand`} value={districts[planDistrict] || 0} detail="openings from consultations & job postings" tone="coral" />
+        <Metric label="Available seats" value={rows.reduce((sum, row) => sum + row.availableSeats, 0)} detail="across required skills" />
+        <Metric label="Net capacity gap" value={rows.reduce((sum, row) => sum + row.gap, 0)} detail="demand minus seats" tone="yellow" />
+      </div>
+
+      <Card>
+        <Table>
+          <thead>
+            <tr>
+              <th>Skill</th>
+              <th>Demand</th>
+              <th>Available</th>
+              <th>Gap</th>
+              <th>Recommendation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.skillId}>
+                <td><b>{row.skill.name}</b></td>
+                <td>{row.openings}</td>
+                <td>{row.availableSeats}</td>
+                <td><Badge tone={row.gap > 0 ? "coral" : "green"}>{row.gap > 0 ? `-${row.gap}` : `+${Math.abs(row.gap)}`}</Badge></td>
+                <td className="muted">{row.gap > 0 ? `Add ${row.gap} seats` : "Capacity meets demand"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      </Card>
+    </>
+  );
+}
 function PeopleIntelligence({ type, data }) { const trainers = type === "trainers"; const items = trainers ? data.trainers : data.candidates; return <><PageHeader eyebrow="Government intelligence" title={trainers ? "Trainer intelligence" : "Candidate intelligence"} description="Readiness and fit are calculated against the same industry skill demand." /><Card><Table><thead><tr><th>{trainers ? "Trainer" : "Candidate"}</th><th>Readiness / fit</th><th>Matched skills</th><th>Missing skills</th><th>Status</th></tr></thead><tbody>{items.map((item) => { const result = trainers ? trainerAnalysis(item, data) : candidateAnalysis(item, data); return <tr key={item.id}><td><b>{item.name}</b><small className="table-sub">{item.experience || item.education}</small></td><td><b>{result.readiness || result.fit}%</b><Progress value={result.readiness || result.fit} tone={(result.readiness || result.fit) >= 80 ? "green" : "yellow"} /></td><td><SkillTags ids={result.matched} /></td><td>{result.missing.length ? skillNames(result.missing).join(", ") : "None"}</td><td><Badge tone={item.status === "Placed" ? "green" : "blue"}>{item.status || "Active"}</Badge></td></tr>; })}</tbody></Table></Card></>; }
 function PlacementOutcomes({ data }) { const feedback = feedbackSummary(data); return <><PageHeader eyebrow="Government intelligence" title="Placement outcomes" description="Verified placement records and employer feedback close the loop." /><div className="metrics-grid"><Metric label="Verified placements" value={data.placements.length} detail="real placement records" tone="green" /><Metric label="Feedback records" value={feedback.count} detail="submitted by employers" /><Metric label="Average rating" value={`${feedback.average} / 5`} detail="from connected feedback" tone="yellow" /></div><Card>{data.placements.length ? <Table><thead><tr><th>Candidate</th><th>Role</th><th>District</th><th>Employer</th><th>Outcome</th><th>Feedback</th></tr></thead><tbody>{data.placements.map((placement) => <tr key={placement.id}><td><b>{data.candidates.find((item) => item.id === placement.candidateId)?.name || "Unknown candidate"}</b></td><td>{placement.role}</td><td>{placement.district || "Pune"}</td><td>{data.employers.find((item) => item.id === placement.employerId)?.name || placement.employerId}</td><td><Badge tone="green">{placement.status}</Badge></td><td>{data.employerFeedback.some((item) => item.placementId === placement.id) ? "Received" : "Pending"}</td></tr>)}</tbody></Table> : <EmptyState title="No placements yet" body="Candidate placement records will appear here once submitted." />}</Card></>; }
 
 function ConsultationForm({ data, onAdd }) { const employer = data.employers[0]; const [form, setForm] = useState({ title: "Data Operations Analyst hiring cohort", openings: employer.openings, note: "Seeking job-ready analysts for the Pune delivery center.", role: employer.role, district: employer.district, requiredSkillIds: [...roleRequirements] }); const toggle = (id) => setForm((current) => ({ ...current, requiredSkillIds: current.requiredSkillIds.includes(id) ? current.requiredSkillIds.filter((skillId) => skillId !== id) : [...current.requiredSkillIds, id] })); return <><PageHeader eyebrow="Employer workspace" title="Create consultation" description="Submit structured demand that immediately feeds government intelligence." /><Card className="form-card"><div className="form-grid"><label>Company<input value={employer.name} readOnly /></label><label>District<input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label><label>Role<input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></label><label>Openings<input type="number" min="1" value={form.openings} onChange={(e) => setForm({ ...form, openings: e.target.value })} /></label><label className="full">Consultation title<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><label className="full">Context and outcome<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label></div><div className="section-head"><div><h2>Required skills</h2><p>Uses canonical Skill IDs across every downstream module.</p></div><Badge>{form.requiredSkillIds.length} selected</Badge></div><div className="skill-pills">{skillCatalog.map((skill) => <button type="button" className={`skill-pill ${form.requiredSkillIds.includes(skill.id) ? "selected" : ""}`} key={skill.id} onClick={() => toggle(skill.id)}><span>{form.requiredSkillIds.includes(skill.id) ? "✓" : "+"}</span><b>{skill.name}</b></button>)}</div><div className="form-footer"><span className="muted">This submission updates Labour Market and Skill Intelligence.</span><Button disabled={!form.role || Number(form.openings) < 1 || !form.requiredSkillIds.length} onClick={() => onAdd({ type: "consultation", ...form })}>Submit consultation</Button></div></Card></>; }
 function FeedbackForm({ data, onAdd }) { const placement = data.placements[0]; const [form, setForm] = useState({ rating: 4, skillGaps: "", note: "" }); return <><PageHeader eyebrow="Employer workspace" title="Placement feedback" description="Share structured post-placement feedback that feeds outcome intelligence." /><Card className="form-card"><label>Placement<select><option>{placement?.role || "No placement available"} · {data.candidates.find((item) => item.id === placement?.candidateId)?.name || "Candidate"}</option></select></label><label>Overall rating<select value={form.rating} onChange={(e) => setForm({ ...form, rating: Number(e.target.value) })}><option value="5">5 - Excellent</option><option value="4">4 - Strong</option><option value="3">3 - Developing</option><option value="2">2 - Needs support</option><option value="1">1 - Poor</option></select></label><label>Skill gaps<input value={form.skillGaps} onChange={(e) => setForm({ ...form, skillGaps: e.target.value })} placeholder="e.g. stakeholder communication" /></label><label>Comments<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Share an observation about job readiness" /></label><div className="form-footer"><span className="muted">Feedback is attached to this placement record.</span><Button disabled={!placement || !form.note} onClick={() => onAdd({ type: "feedback", ...form, placementId: placement.id })}>Submit feedback</Button></div></Card></>; }
 
-function EmployerView({ view, data, onAdd }) { const employer = data.employers[0]; const demand = demandRows(data); if (view === "create-consultation") return <ConsultationForm data={data} onAdd={onAdd} />; if (view === "consultations") return <><PageHeader eyebrow="Employer workspace" title="My consultations" description="Track demand submissions that feed the district intelligence layer." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ New consultation</Button>} /><Card><Table><thead><tr><th>Consultation</th><th>Role</th><th>District</th><th>Openings</th><th>Status</th></tr></thead><tbody>{data.consultations.filter((item) => item.employerId === employer.id).map((item) => <tr key={item.id}><td><b>{item.title}</b><small className="table-sub">Created {item.createdAt}</small></td><td>{item.role || item.title}</td><td>{item.district}</td><td>{item.openings}</td><td><Badge>{item.status}</Badge></td></tr>)}</tbody></Table></Card></>; if (view === "required-skills") return <><PageHeader eyebrow="Employer workspace" title="Required skills" description="The same canonical requirements used by government, courses, trainers, and candidates." /><Card><div className="role-card"><div><div className="eyebrow">OPEN ROLE · {employer.openings} OPENINGS</div><h2>{employer.role}</h2><p>{employer.name} · {employer.district}</p></div><Badge tone="coral">Hiring now</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>; if (view === "feedback") return <FeedbackForm data={data} onAdd={onAdd} />; return <><PageHeader eyebrow="Employer workspace" title={`Good morning, ${data.users.find((user) => user.role === "employer")?.name?.split(" ")[0] || "partner"}.`} description="Your submitted demand is visible across the Pune skills ecosystem." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ Create consultation</Button>} /><div className="metrics-grid"><Metric label="Open role" value={employer.role} detail={`${totalOpenings(data)} openings across demand`} tone="coral" /><Metric label="Consultations" value={data.consultations.filter((item) => item.employerId === employer.id).length} detail="submitted demand records" /><Metric label="Demanded skills" value={demand.length} detail="canonical requirements" tone="green" /></div><Card><div className="section-head"><div><h2>Current hiring signal</h2><p>Live required skills from your consultations</p></div><Badge>Connected</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>; }
+function InstituteProposalsView({ data, onAdd }) {
+  const [targetKey, setTargetKey] = useState("curriculum:curr-1");
+  const [selectedSkills, setSelectedSkills] = useState(["power-bi"]);
+  const [rationale, setRationale] = useState("Align offering with rising industry hiring requirements and capacity deficit.");
+  const [showForm, setShowForm] = useState(false);
 
-function InstituteView({ view, data, onAdd }) { if (view === "courses" || view === "course-skills") return <><PageHeader eyebrow="Training institute" title={view === "courses" ? "Courses" : "Course skills"} description="Course coverage is evaluated against current industry demand." action={<Button onClick={() => onAdd({ type: "course" })}>+ Add course</Button>} /><div className="course-grid">{data.courses.map((course) => { const result = courseAnalysis(course, data); return <Card key={course.id}><div className="course-title"><span className="course-icon">▤</span><div><h2>{course.name}</h2><p>{course.duration} · {course.mode}</p></div></div><div className="course-score"><strong>{result.alignment}%</strong><span>alignment</span></div><Progress value={result.alignment} tone="green" /><div className="capacity-line"><span>Enrolment</span><b>{course.enrolled} / {course.seats}</b></div><SkillTags ids={course.skillIds} /></Card>; })}</div></>; if (view === "capacity") { const seats = data.courses.reduce((sum, course) => sum + Math.max(0, course.seats - course.enrolled), 0); return <><PageHeader eyebrow="Training institute" title="Training capacity" description="Available seats are derived from course seats minus enrolment." /><div className="metrics-grid"><Metric label="Total seats" value={data.courses.reduce((sum, course) => sum + course.seats, 0)} detail="across connected courses" /><Metric label="Available" value={seats} detail="ready for learners" tone="green" /><Metric label="Utilisation" value={`${data.courses.reduce((sum, course) => sum + course.enrolled, 0)} enrolled`} detail="from course records" tone="yellow" /></div><Card><EmptyState title="Capacity linked to courses" body="Government capacity intelligence uses the same course and training capacity records." /></Card></>; } return <><PageHeader eyebrow="Training institute" title="Institute dashboard" description="A connected operating view of courses, seats, and outcomes." action={<Button onClick={() => onAdd({ type: "course" })}>+ Add course</Button>} /><div className="metrics-grid"><Metric label="Active courses" value={data.courses.length} detail="connected offerings" /><Metric label="Learners enrolled" value={data.courses.reduce((sum, course) => sum + course.enrolled, 0)} detail="from course records" tone="blue" /><Metric label="Placements" value={data.placements.filter((placement) => data.courses.some((course) => course.id === placement.courseId) || placement.employerId).length} detail="verified outcomes" tone="green" /></div><Card>{data.courses.map((course) => <div className="course-row" key={course.id}><div className="course-icon">▤</div><div><b>{course.name}</b><p>{course.duration} · {course.mode}</p></div><div className="course-row-progress"><Progress value={course.enrolled / Math.max(course.seats, 1) * 100} /><small>{course.enrolled}/{course.seats} seats</small></div><Badge tone="green">{course.status}</Badge></div>)}</Card></>; }
+  const proposals = data.curriculumProposals || [];
+
+  const toggleSkill = (id) => {
+    setSelectedSkills((curr) =>
+      curr.includes(id) ? curr.filter((s) => s !== id) : [...curr, id]
+    );
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!selectedSkills.length) return;
+    const [targetType, targetId] = targetKey.split(":");
+    let targetName = targetId;
+    if (targetType === "curriculum") {
+      const c = data.curriculums?.find((item) => item.id === targetId);
+      targetName = c ? c.title || c.name : "Curriculum Framework";
+    } else {
+      const c = data.courses?.find((item) => item.id === targetId);
+      targetName = c ? c.name : "Course Cohort";
+    }
+    onAdd({
+      type: "curriculum-proposal",
+      targetType,
+      targetId,
+      targetName,
+      proposedSkillIds: selectedSkills,
+      rationale,
+    });
+    setShowForm(false);
+  };
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Training institute / Curriculum"
+        title="Curriculum change proposals"
+        description="Propose curriculum enhancements and skill updates for industry validation."
+        action={<Button onClick={() => setShowForm((v) => !v)}>{showForm ? "Cancel" : "+ Propose curriculum update"}</Button>}
+      />
+
+      {showForm && (
+        <Card className="form-card" style={{ marginBottom: "20px" }}>
+          <div className="section-head">
+            <div>
+              <h2>Submit curriculum enhancement</h2>
+              <p>Propose adding in-demand skills to a course or state curriculum framework.</p>
+            </div>
+            <Badge tone="blue">Industry Validation Workflow</Badge>
+          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <label className="full">
+                Target course or curriculum framework
+                <select
+                  value={targetKey}
+                  onChange={(e) => setTargetKey(e.target.value)}
+                  style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid var(--line)" }}
+                >
+                  <optgroup label="State Curriculums">
+                    {(data.curriculums || []).map((c) => (
+                      <option key={`curriculum:${c.id}`} value={`curriculum:${c.id}`}>
+                        {c.title || c.name} (Curriculum)
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Institute Courses">
+                    {(data.courses || []).map((c) => (
+                      <option key={`course:${c.id}`} value={`course:${c.id}`}>
+                        {c.name} (Course)
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+
+              <label className="full">
+                Proposal rationale / evidence
+                <input
+                  value={rationale}
+                  onChange={(e) => setRationale(e.target.value)}
+                  placeholder="Explain why this skill addition is needed based on labour market signals..."
+                />
+              </label>
+            </div>
+
+            <div className="section-head" style={{ marginTop: "16px" }}>
+              <div>
+                <h2>Proposed skill additions</h2>
+                <p>Select canonical skills to add to this target syllabus.</p>
+              </div>
+              <Badge>{selectedSkills.length} selected</Badge>
+            </div>
+
+            <div className="skill-pills">
+              {skillCatalog.map((skill) => (
+                <button
+                  type="button"
+                  className={`skill-pill ${selectedSkills.includes(skill.id) ? "selected" : ""}`}
+                  key={skill.id}
+                  onClick={() => toggleSkill(skill.id)}
+                >
+                  <span>{selectedSkills.includes(skill.id) ? "✓" : "+"}</span>
+                  <b>{skill.name}</b>
+                </button>
+              ))}
+            </div>
+
+            <div className="form-footer" style={{ marginTop: "16px" }}>
+              <span className="muted">This proposal will be sent to partner employers for validation.</span>
+              <Button type="submit" disabled={!selectedSkills.length || !rationale.trim()}>
+                Submit proposal
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      <Card>
+        <div className="section-head">
+          <div>
+            <h2>Submitted curriculum proposals</h2>
+            <p>Track employer validation status and curriculum update lifecycle.</p>
+          </div>
+          <Badge tone="green">{proposals.length} record(s)</Badge>
+        </div>
+
+        {proposals.length ? (
+          <Table>
+            <thead>
+              <tr>
+                <th>Target syllabus</th>
+                <th>Type</th>
+                <th>Proposed skills</th>
+                <th>Rationale</th>
+                <th>Status</th>
+                <th>Employer validation notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {proposals.map((prop) => (
+                <tr key={prop.id}>
+                  <td>
+                    <b>{prop.targetName}</b>
+                    <small className="table-sub">Submitted {prop.createdAt}</small>
+                  </td>
+                  <td>
+                    <Badge tone="blue">{prop.targetType === "curriculum" ? "Curriculum" : "Course"}</Badge>
+                  </td>
+                  <td>
+                    <SkillTags ids={prop.proposedSkillIds} />
+                  </td>
+                  <td style={{ maxWidth: "260px", fontSize: "12px" }}>{prop.rationale}</td>
+                  <td>
+                    <Badge tone={prop.status === "Approved" ? "green" : prop.status === "Rejected" ? "coral" : "yellow"}>
+                      {prop.status}
+                    </Badge>
+                  </td>
+                  <td style={{ fontSize: "12px" }}>
+                    {prop.employerComment ? (
+                      <div>
+                        <b>Feedback:</b> {prop.employerComment}
+                      </div>
+                    ) : (
+                      <span className="muted">Pending review</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ) : (
+          <EmptyState
+            title="No proposals submitted"
+            body="Submit a curriculum proposal to request employer review and update syllabus content."
+          />
+        )}
+      </Card>
+    </>
+  );
+}
+
+function EmployerProposalsView({ data, onAdd }) {
+  const proposals = data.curriculumProposals || [];
+  const [comments, setComments] = useState({});
+
+  const handleCommentChange = (id, value) => {
+    setComments((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleAction = (proposalId, status) => {
+    onAdd({
+      type: "proposal-action",
+      proposalId,
+      status,
+      employerComment: comments[proposalId] || (status === "Approved" ? "Validated and approved for hiring alignment." : "Curriculum change rejected."),
+    });
+  };
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="Employer workspace / Validation"
+        title="Curriculum validation & review"
+        description="Review curriculum update proposals from training institutes. Approved updates are merged directly into official course/curriculum skills."
+      />
+
+      <div className="metrics-grid">
+        <Metric
+          label="Pending proposals"
+          value={proposals.filter((p) => p.status === "Pending").length}
+          detail="requiring employer validation"
+          tone="yellow"
+        />
+        <Metric
+          label="Approved updates"
+          value={proposals.filter((p) => p.status === "Approved").length}
+          detail="applied to live syllabi"
+          tone="green"
+        />
+        <Metric
+          label="Total proposals"
+          value={proposals.length}
+          detail="submitted by institutes"
+        />
+      </div>
+
+      <Card>
+        <div className="section-head">
+          <div>
+            <h2>Institute curriculum change requests</h2>
+            <p>Direct employer feedback ensures training institutes teach what industry actually hires for.</p>
+          </div>
+          <Badge tone="blue">Direct Industry Input</Badge>
+        </div>
+
+        {proposals.length ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {proposals.map((prop) => {
+              const isPending = prop.status === "Pending";
+              return (
+                <div
+                  key={prop.id}
+                  style={{
+                    border: "1px solid var(--line)",
+                    borderRadius: "8px",
+                    padding: "16px",
+                    background: isPending ? "#fff" : "#fcfdfc",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                        <h3 style={{ margin: 0, fontSize: "15px" }}>{prop.targetName}</h3>
+                        <Badge tone="blue">{prop.targetType}</Badge>
+                        <Badge tone={prop.status === "Approved" ? "green" : prop.status === "Rejected" ? "coral" : "yellow"}>
+                          {prop.status}
+                        </Badge>
+                      </div>
+                      <small className="muted">Proposed by {prop.proposedBy || "Training Institute"} · Submitted {prop.createdAt}</small>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "4px", color: "var(--muted)" }}>PROPOSED SKILLS TO ADD:</div>
+                    <SkillTags ids={prop.proposedSkillIds} />
+                  </div>
+
+                  <div style={{ background: "#f8faf9", padding: "10px 14px", borderRadius: "6px", marginBottom: "12px", fontSize: "12px" }}>
+                    <b>Institute Rationale:</b> {prop.rationale}
+                  </div>
+
+                  {isPending ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px", borderTop: "1px dashed var(--line)", paddingTop: "12px" }}>
+                      <label style={{ fontSize: "12px", fontWeight: "600" }}>
+                        Employer validation comment:
+                        <input
+                          type="text"
+                          value={comments[prop.id] || ""}
+                          onChange={(e) => handleCommentChange(prop.id, e.target.value)}
+                          placeholder="e.g. Validated. We have immediate openings requiring these skills."
+                          style={{ marginTop: "4px", width: "100%", padding: "8px 12px", borderRadius: "5px", border: "1px solid var(--line)" }}
+                        />
+                      </label>
+                      <div style={{ display: "flex", gap: "10px" }}>
+                        <Button
+                          variant="primary"
+                          onClick={() => handleAction(prop.id, "Approved")}
+                        >
+                          ✓ Approve & Apply to Syllabus
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleAction(prop.id, "Rejected")}
+                        >
+                          ✕ Reject Proposal
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ borderTop: "1px solid var(--line)", paddingTop: "10px", fontSize: "12px" }}>
+                      <b>Employer Feedback:</b> {prop.employerComment || "No comment provided."}
+                      {prop.resolvedAt && <span className="muted" style={{ marginLeft: "8px" }}>· Resolved {prop.resolvedAt}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            title="No proposals pending review"
+            body="Training institutes haven't submitted any curriculum update proposals yet."
+          />
+        )}
+      </Card>
+    </>
+  );
+}
+
+function EmployerView({ view, data, onAdd }) {
+  const employer = data.employers[0];
+  const demand = demandRows(data);
+  if (view === "create-consultation") return <ConsultationForm data={data} onAdd={onAdd} />;
+  if (view === "consultations") return <><PageHeader eyebrow="Employer workspace" title="My consultations" description="Track demand submissions that feed the district intelligence layer." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ New consultation</Button>} /><Card><Table><thead><tr><th>Consultation</th><th>Role</th><th>District</th><th>Openings</th><th>Status</th></tr></thead><tbody>{data.consultations.filter((item) => item.employerId === employer.id).map((item) => <tr key={item.id}><td><b>{item.title}</b><small className="table-sub">Created {item.createdAt}</small></td><td>{item.role || item.title}</td><td>{item.district}</td><td>{item.openings}</td><td><Badge>{item.status}</Badge></td></tr>)}</tbody></Table></Card></>;
+  if (view === "required-skills") return <><PageHeader eyebrow="Employer workspace" title="Required skills" description="The same canonical requirements used by government, courses, trainers, and candidates." /><Card><div className="role-card"><div><div className="eyebrow">OPEN ROLE · {employer.openings} OPENINGS</div><h2>{employer.role}</h2><p>{employer.name} · {employer.district}</p></div><Badge tone="coral">Hiring now</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>;
+  if (view === "curriculum-proposals") return <EmployerProposalsView data={data} onAdd={onAdd} />;
+  if (view === "feedback") return <FeedbackForm data={data} onAdd={onAdd} />;
+  return <><PageHeader eyebrow="Employer workspace" title={`Good morning, ${data.users.find((user) => user.role === "employer")?.name?.split(" ")[0] || "partner"}.`} description="Your submitted demand is visible across the Pune skills ecosystem." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ Create consultation</Button>} /><div className="metrics-grid"><Metric label="Open role" value={employer.role} detail={`${totalOpenings(data)} openings across demand`} tone="coral" /><Metric label="Consultations" value={data.consultations.filter((item) => item.employerId === employer.id).length} detail="submitted demand records" /><Metric label="Demanded skills" value={demand.length} detail="canonical requirements" tone="green" /></div><Card><div className="section-head"><div><h2>Current hiring signal</h2><p>Live required skills from your consultations</p></div><Badge>Connected</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>;
+}
+
+function InstituteView({ view, data, onAdd }) {
+  if (view === "curriculum-proposals") return <InstituteProposalsView data={data} onAdd={onAdd} />;
+  if (view === "courses" || view === "course-skills") return (
+    <>
+      <PageHeader
+        eyebrow="Training institute"
+        title={view === "courses" ? "Courses" : "Course skills"}
+        description="Course coverage is evaluated against current industry demand and supply flags."
+        action={<Button onClick={() => onAdd({ type: "course" })}>+ Add course</Button>}
+      />
+      <div className="course-grid">
+        {data.courses.map((course) => {
+          const result = courseAnalysis(course, data);
+          const supply = courseSupplyStatus(course, data);
+          const supplyTone = supply.status === "Obsolete" ? "coral" : supply.status === "Oversupplied" ? "yellow" : supply.status === "Undersupplied" ? "blue" : "green";
+          return (
+            <Card key={course.id}>
+              <div className="course-title">
+                <span className="course-icon">▤</span>
+                <div>
+                  <h2>{course.name}</h2>
+                  <p>{course.duration} · {course.mode}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "8px 0" }}>
+                <Badge tone={supplyTone}>{supply.status}</Badge>
+                <small className="muted">{supply.enrolmentRatio}% enrolment</small>
+              </div>
+              <p className="explain" style={{ fontSize: "11px", margin: "4px 0 10px 0" }}>
+                {supply.reason}
+              </p>
+              <div className="course-score">
+                <strong>{result.alignment}%</strong>
+                <span>alignment</span>
+              </div>
+              <Progress value={result.alignment} tone="green" />
+              <div className="capacity-line">
+                <span>Enrolment</span>
+                <b>{course.enrolled} / {course.seats}</b>
+              </div>
+              <SkillTags ids={course.skillIds} />
+            </Card>
+          );
+        })}
+      </div>
+    </>
+  );
+  if (view === "capacity") {
+    const seats = data.courses.reduce((sum, course) => sum + Math.max(0, course.seats - course.enrolled), 0);
+    return <><PageHeader eyebrow="Training institute" title="Training capacity" description="Available seats are derived from course seats minus enrolment." /><div className="metrics-grid"><Metric label="Total seats" value={data.courses.reduce((sum, course) => sum + course.seats, 0)} detail="across connected courses" /><Metric label="Available" value={seats} detail="ready for learners" tone="green" /><Metric label="Utilisation" value={`${data.courses.reduce((sum, course) => sum + course.enrolled, 0)} enrolled`} detail="from course records" tone="yellow" /></div><Card><EmptyState title="Capacity linked to courses" body="Government capacity intelligence uses the same course and training capacity records." /></Card></>;
+  }
+  return (
+    <>
+      <PageHeader eyebrow="Training institute" title="Institute dashboard" description="A connected operating view of courses, seats, and outcomes." action={<Button onClick={() => onAdd({ type: "course" })}>+ Add course</Button>} />
+      <div className="metrics-grid">
+        <Metric label="Active courses" value={data.courses.length} detail="connected offerings" />
+        <Metric label="Learners enrolled" value={data.courses.reduce((sum, course) => sum + course.enrolled, 0)} detail="from course records" tone="blue" />
+        <Metric label="Placements" value={data.placements.filter((placement) => data.courses.some((course) => course.id === placement.courseId) || placement.employerId).length} detail="verified outcomes" tone="green" />
+      </div>
+      <Card>
+        {data.courses.map((course) => {
+          const supply = courseSupplyStatus(course, data);
+          return (
+            <div className="course-row" key={course.id}>
+              <div className="course-icon">▤</div>
+              <div>
+                <b>{course.name}</b>
+                <p>{course.duration} · {course.mode}</p>
+                <div style={{ marginTop: "4px" }}>
+                  <Badge tone={supply.status === "Obsolete" ? "coral" : supply.status === "Oversupplied" ? "yellow" : "green"}>{supply.status}</Badge>
+                </div>
+              </div>
+              <div className="course-row-progress">
+                <Progress value={course.enrolled / Math.max(course.seats, 1) * 100} />
+                <small>{course.enrolled}/{course.seats} seats</small>
+              </div>
+              <Badge tone="green">{course.status}</Badge>
+            </div>
+          );
+        })}
+      </Card>
+    </>
+  );
+}
 
 function TrainerView({ view, data, onAdd }) { const trainer = data.trainers[0]; const result = trainerAnalysis(trainer, data); if (view === "skills") return <><PageHeader eyebrow="Trainer workspace" title="My skills" description="Update the same canonical skills used in trainer intelligence." action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>+ Add Power BI</Button>} /><Card><div className="profile-heading"><div className="avatar large">R</div><div><h2>{trainer.name}</h2><p>{trainer.experience} experience · Pune Digital Academy</p></div></div><SkillTags ids={trainer.skillIds} /></Card></>; if (view === "gaps" || view === "upskilling") return <><PageHeader eyebrow="Trainer workspace" title={view === "gaps" ? "Skill gaps" : "Recommended upskilling"} description="Missing skills are derived by comparing trainer skills with live employer demand." /><Card><div className="section-head"><div><h2>{result.missing.length} skills to strengthen</h2><p>Required industry skills not present in this trainer profile</p></div><Badge tone="yellow">Explainable</Badge></div>{result.missing.map((skillId) => <div className="recommendation" key={skillId}><span className="action-icon yellow">✦</span><div><b>{getSkill(skillId).name}</b><p>Demand is present and no match exists in this trainer profile.</p></div><Button variant="secondary" onClick={() => onAdd({ type: "trainer-skill", skillId })}>Add to profile</Button></div>)}</Card></>; return <><PageHeader eyebrow="Trainer workspace" title={`Hello, ${trainer.name.split(" ")[0]}.`} description="Your readiness is calculated against current consultation demand." action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>Update skills</Button>} /><div className="metrics-grid"><Metric label="Profile readiness" value={`${result.readiness}%`} detail="matched demand skills" tone="green" /><Metric label="Missing skills" value={result.missing.length} detail="recommended for upskilling" tone="coral" /><Metric label="Skills verified" value={trainer.skillIds.length} detail="canonical platform skills" tone="blue" /></div><Card><div className="recommendation"><span className="action-icon yellow">✦</span><div><b>{result.missing.length ? `Add ${getSkill(result.missing[0]).name} to your profile` : "Profile covers current demand"}</b><p>{result.missing.length ? "This recommendation is generated from the employer consultation skill set." : "No missing skills detected against current demand."}</p></div>{result.missing.length > 0 && <Button onClick={() => onAdd({ type: "trainer-skill", skillId: result.missing[0] })}>Add skill</Button>}</div></Card></>; }
 
@@ -90,14 +940,116 @@ export default function Home() {
   useEffect(() => { if (guided) window.localStorage.setItem("skillconnect-guided-demo", "active"); else window.localStorage.removeItem("skillconnect-guided-demo"); }, [guided]);
   useEffect(() => { if (role) window.localStorage.setItem("skillconnect-role", role); }, [role]); useEffect(() => { if (dataOverride) window.localStorage.setItem("skillconnect-data", JSON.stringify(dataOverride)); }, [dataOverride]);
   const selectRole = (nextUser) => { setRoleOverride(nextUser?.role || ""); setView("overview"); };
-  const onAdd = async (action) => { if (busy) return; if (action.type === "navigate") { setView(action.view); return; } setBusy(true); const id = `${action.type}-${Date.now()}`; let name = ""; let record = null; let nextView = view;
+  const onAdd = async (action) => {
+    if (busy) return;
+    if (action.type === "navigate") { setView(action.view); return; }
+    setBusy(true);
+    const id = `${action.type}-${Date.now()}`;
+    let name = "";
+    let record = null;
+    let nextView = view;
     if (action.type === "consultation") { name = "consultations"; record = { id, employerId: "technova", title: action.title, role: action.role, openings: Number(action.openings), district: action.district, requiredSkillIds: action.requiredSkillIds, status: "Submitted", createdAt: today, note: action.note }; nextView = "consultations"; }
     if (action.type === "course") { name = "courses"; record = { id, instituteId: "pda", name: "New skills cohort", duration: "10 weeks", seats: 25, enrolled: 0, mode: "Blended", status: "Draft", skillIds: ["sql", "data-analysis"] }; nextView = "courses"; }
     if (action.type === "trainer-skill") { const trainer = data.trainers[0]; if (trainer.skillIds.includes(action.skillId)) { setNotice(`${getSkill(action.skillId).name} is already on the profile`); setBusy(false); return; } name = "trainers"; record = { ...trainer, skillIds: [...trainer.skillIds, action.skillId] }; }
     if (action.type === "candidate-skill") { const candidate = data.candidates[0]; if (candidate.skillIds.includes(action.skillId)) { setNotice(`${getSkill(action.skillId).name} is already on the profile`); setBusy(false); return; } name = "candidates"; record = { ...candidate, skillIds: [...candidate.skillIds, action.skillId] }; }
     if (action.type === "placement") { name = "placements"; record = { id, candidateId: action.candidateId, employerId: action.employerId, role: action.role, district: action.district, status: action.status, placedAt: action.placedAt }; nextView = "placements"; }
     if (action.type === "feedback") { name = "employerFeedback"; record = { id, placementId: action.placementId, employerId: "technova", candidateId: data.placements.find((item) => item.id === action.placementId)?.candidateId, role: data.placements.find((item) => item.id === action.placementId)?.role, rating: Number(action.rating), skillGaps: action.skillGaps ? action.skillGaps.split(",").map((item) => item.trim()).filter(Boolean) : [], note: action.note, createdAt: today }; }
-    try { await persistEntity(name, record); if (name === "courses") await persistEntity("courseSkills", { id: `${id}-skills`, courseId: id, skillIds: record.skillIds }); if (name === "trainers") await persistEntity("trainerSkills", { id: `${record.id}-skills`, trainerId: record.id, skillIds: record.skillIds }); if (name === "candidates") await persistEntity("candidateSkills", { id: `${record.id}-skills`, candidateId: record.id, skillIds: record.skillIds }); setDataOverride((current) => { const next = { ...(current || data) }; if (name === "trainers") { next.trainers = data.trainers.map((item, index) => index === 0 ? record : item); next.trainerSkills = data.trainerSkills.map((item) => item.trainerId === record.id ? { ...item, skillIds: record.skillIds } : item); } else if (name === "candidates") { next.candidates = data.candidates.map((item, index) => index === 0 ? record : item); next.candidateSkills = data.candidateSkills.map((item) => item.candidateId === record.id ? { ...item, skillIds: record.skillIds } : item); } else { next[name] = [record, ...(data[name] || [])]; if (name === "courses") next.courseSkills = [{ id: `${id}-skills`, courseId: id, skillIds: record.skillIds }, ...data.courseSkills]; if (name === "placements") next.candidates = data.candidates.map((item) => item.id === record.candidateId ? { ...item, status: "Placed" } : item); } return next; }); setView(nextView); setNotice(action.type === "consultation" ? "Consultation submitted and saved" : action.type === "placement" ? "Placement recorded and saved" : action.type === "feedback" ? "Employer feedback submitted and saved" : "Change saved"); } catch { setNotice("The change could not be saved. Your current local state is unchanged."); } finally { setBusy(false); window.setTimeout(() => setNotice(""), 3500); }
+    if (action.type === "curriculum-proposal") {
+      name = "curriculumProposals";
+      record = {
+        id,
+        targetType: action.targetType || "curriculum",
+        targetId: action.targetId || "curr-1",
+        targetName: action.targetName || "Maharashtra Data Services Level 5",
+        proposedSkillIds: action.proposedSkillIds || [],
+        proposedBy: "Pune Digital Academy",
+        employerId: "technova",
+        status: "Pending",
+        employerComment: "",
+        createdAt: today,
+        rationale: action.rationale || "Aligned with live employer demand.",
+      };
+      nextView = "curriculum-proposals";
+    }
+    if (action.type === "proposal-action") {
+      name = "curriculumProposals";
+      const existing = (data.curriculumProposals || []).find((p) => p.id === action.proposalId);
+      if (!existing) {
+        setBusy(false);
+        return;
+      }
+      record = {
+        ...existing,
+        status: action.status,
+        employerComment: action.employerComment || existing.employerComment,
+        resolvedAt: today,
+      };
+      nextView = "curriculum-proposals";
+    }
+
+    try {
+      await persistEntity(name, record);
+      if (name === "courses") await persistEntity("courseSkills", { id: `${id}-skills`, courseId: id, skillIds: record.skillIds });
+      if (name === "trainers") await persistEntity("trainerSkills", { id: `${record.id}-skills`, trainerId: record.id, skillIds: record.skillIds });
+      if (name === "candidates") await persistEntity("candidateSkills", { id: `${record.id}-skills`, candidateId: record.id, skillIds: record.skillIds });
+      if (action.type === "proposal-action" && action.status === "Approved") {
+        if (record.targetType === "curriculum") {
+          const curr = data.curriculums?.find((c) => c.id === record.targetId);
+          if (curr) {
+            const updatedSkillIds = Array.from(new Set([...(curr.skillIds || []), ...record.proposedSkillIds]));
+            await persistEntity("curriculums", { ...curr, skillIds: updatedSkillIds, status: "Validated" });
+            await persistEntity("curriculumSkills", { curriculumId: curr.id, skillIds: updatedSkillIds });
+          }
+        } else if (record.targetType === "course") {
+          const course = data.courses?.find((c) => c.id === record.targetId);
+          if (course) {
+            const updatedSkillIds = Array.from(new Set([...(course.skillIds || []), ...record.proposedSkillIds]));
+            await persistEntity("courses", { ...course, skillIds: updatedSkillIds });
+            await persistEntity("courseSkills", { id: `${course.id}-skills`, courseId: course.id, skillIds: updatedSkillIds });
+          }
+        }
+      }
+      setDataOverride((current) => {
+        const next = { ...(current || data) };
+        if (name === "trainers") {
+          next.trainers = data.trainers.map((item, index) => index === 0 ? record : item);
+          next.trainerSkills = data.trainerSkills.map((item) => item.trainerId === record.id ? { ...item, skillIds: record.skillIds } : item);
+        } else if (name === "candidates") {
+          next.candidates = data.candidates.map((item, index) => index === 0 ? record : item);
+          next.candidateSkills = data.candidateSkills.map((item) => item.candidateId === record.id ? { ...item, skillIds: record.skillIds } : item);
+        } else if (action.type === "proposal-action") {
+          next.curriculumProposals = (data.curriculumProposals || []).map((p) => p.id === record.id ? record : p);
+          if (action.status === "Approved") {
+            if (record.targetType === "curriculum") {
+              next.curriculums = (data.curriculums || []).map((c) => c.id === record.targetId ? { ...c, skillIds: Array.from(new Set([...(c.skillIds || []), ...record.proposedSkillIds])), status: "Validated" } : c);
+              next.curriculumSkills = (data.curriculumSkills || []).map((cs) => cs.curriculumId === record.targetId ? { ...cs, skillIds: Array.from(new Set([...(cs.skillIds || []), ...record.proposedSkillIds])) } : cs);
+            } else if (record.targetType === "course") {
+              next.courses = (data.courses || []).map((c) => c.id === record.targetId ? { ...c, skillIds: Array.from(new Set([...(c.skillIds || []), ...record.proposedSkillIds])) } : c);
+              next.courseSkills = (data.courseSkills || []).map((cs) => cs.courseId === record.targetId ? { ...cs, skillIds: Array.from(new Set([...(cs.skillIds || []), ...record.proposedSkillIds])) } : cs);
+            }
+          }
+        } else {
+          next[name] = [record, ...(data[name] || [])];
+          if (name === "courses") next.courseSkills = [{ id: `${id}-skills`, courseId: id, skillIds: record.skillIds }, ...data.courseSkills];
+          if (name === "placements") next.candidates = data.candidates.map((item) => item.id === record.candidateId ? { ...item, status: "Placed" } : item);
+        }
+        return next;
+      });
+      setView(nextView);
+      setNotice(
+        action.type === "consultation" ? "Consultation submitted and saved" :
+        action.type === "placement" ? "Placement recorded and saved" :
+        action.type === "feedback" ? "Employer feedback submitted and saved" :
+        action.type === "curriculum-proposal" ? "Curriculum proposal submitted for employer validation" :
+        action.type === "proposal-action" ? (action.status === "Approved" ? "Proposal approved and skills merged into curriculum!" : "Proposal marked as rejected") :
+        "Change saved"
+      );
+    } catch {
+      setNotice("The change could not be saved. Your current local state is unchanged.");
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => setNotice(""), 3500);
+    }
   };
   const content = role === "government" ? <GovernmentView view={view} data={data} setView={setView} /> : role === "employer" ? <EmployerView view={view} data={data} onAdd={onAdd} /> : role === "institute" ? <InstituteView view={view} data={data} onAdd={onAdd} /> : role === "trainer" ? <TrainerView view={view} data={data} onAdd={onAdd} /> : <CandidateView view={view} data={data} onAdd={onAdd} />;
   if (guided) return <GuidedDemo data={data} onExit={() => { setGuidedOverride(false); window.localStorage.removeItem("skillconnect-guided-step"); window.history.replaceState({}, "", window.location.pathname); }} />;

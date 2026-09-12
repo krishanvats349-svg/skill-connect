@@ -13,7 +13,40 @@ function Table({ children }) { return <div className="table-wrap"><table>{childr
 function PageHeader({ title, description, action }) { return <div className="page-header"><div><div className="eyebrow">Government intelligence / decision support</div><h1>{title}</h1><p>{description}</p></div>{action}</div>; }
 function Status({ value }) { return <Badge tone={value === "Critical" || value === "Critical Intervention" ? "coral" : value === "High" || value === "High Priority" ? "yellow" : "green"}>{value}</Badge>; }
 
-function Evidence({ action, data }) { const detail = skillPulseDetail(action.skillId, data); return <div className="evidence-panel"><div className="eyebrow">WHY IS {detail.skill.name.toUpperCase()} A PRIORITY?</div><div className="evidence-grid"><div><span>Industry demand</span><b>{detail.openings} openings</b></div><div><span>Employers requesting</span><b>{detail.employers}</b></div><div><span>Training coverage</span><b>{detail.coverage.courses} course(s)</b></div><div><span>Trainer coverage</span><b>{detail.coverage.trainers} trainer(s)</b></div><div><span>Candidate coverage</span><b>{detail.coverage.candidates} candidate(s)</b></div><div><span>Current gap</span><b>{Math.max(detail.capacityGap, 0)} seats</b></div></div><p>{detail.skill.name} is being prioritized because employer demand is high while the relevant ecosystem coverage is comparatively low. Evidence: {action.evidence}. This is a deterministic prototype recommendation.</p></div>; }
+function Evidence({ action, data }) {
+  if (action.type === "Course") {
+    const course = data.courses.find((c) => c.id === action.courseId);
+    return (
+      <div className="evidence-panel">
+        <div className="eyebrow">COURSE SUPPLY INTELLIGENCE · {action.status?.toUpperCase() || "FLAGGED"}</div>
+        <div className="evidence-grid">
+          <div><span>Course name</span><b>{course?.name || "Course"}</b></div>
+          <div><span>Allocated seats</span><b>{course?.seats || 0} seats</b></div>
+          <div><span>Current enrolment</span><b>{course?.enrolled || 0} enrolled</b></div>
+          <div><span>Enrolment ratio</span><b>{course ? Math.round((course.enrolled / Math.max(course.seats, 1)) * 100) : 0}%</b></div>
+          <div><span>Supply flag</span><b>{action.status}</b></div>
+          <div><span>Location</span><b>{action.location}</b></div>
+        </div>
+        <p>{action.evidence} Recommended intervention: {action.action} (Deterministic evaluation against connected demand signals).</p>
+      </div>
+    );
+  }
+  const detail = skillPulseDetail(action.skillId, data);
+  return (
+    <div className="evidence-panel">
+      <div className="eyebrow">WHY IS {detail.skill.name.toUpperCase()} A PRIORITY?</div>
+      <div className="evidence-grid">
+        <div><span>Industry demand</span><b>{detail.openings} openings</b></div>
+        <div><span>Employers requesting</span><b>{detail.employers}</b></div>
+        <div><span>Training coverage</span><b>{detail.coverage.courses} course(s)</b></div>
+        <div><span>Trainer coverage</span><b>{detail.coverage.trainers} trainer(s)</b></div>
+        <div><span>Candidate coverage</span><b>{detail.coverage.candidates} candidate(s)</b></div>
+        <div><span>Current gap</span><b>{Math.max(detail.capacityGap, 0)} seats</b></div>
+      </div>
+      <p>{detail.skill.name} is being prioritized because employer demand is high while the relevant ecosystem coverage is comparatively low. Evidence: {action.evidence}. This is a deterministic prototype recommendation.</p>
+    </div>
+  );
+}
 function ActionCenter({ data }) { const actions = priorityActions(data); const [expanded, setExpanded] = useState(null); return <Card className="action-center"><div className="section-head"><div><div className="eyebrow">GOVERNMENT ACTION CENTER</div><h2>Priority Actions</h2><p>Sorted by transparent intervention score from demand, gap, and coverage evidence.</p></div><Badge tone="coral">{actions.length} action(s)</Badge></div>{actions.length ? actions.map((action) => <div className="action-item" key={action.id}><div className="action-item-main"><div><Status value={action.priority} /><span className="action-type">{action.type} · {action.affected}</span></div><h3>{action.issue}</h3><p><b>{action.location}</b> · {action.evidence}</p><strong>Recommended action: {action.action}</strong></div><button className="evidence-toggle" aria-expanded={expanded === action.id} onClick={() => setExpanded(expanded === action.id ? null : action.id)}>{expanded === action.id ? "Hide evidence" : "Why?"}</button>{expanded === action.id && <Evidence action={action} data={data} />}</div>) : <div className="empty"><strong>No interventions detected</strong><p>Current connected data does not contain an actionable gap.</p></div>}</Card>; }
 function PipelinePanel({ data }) { const options = hierarchyOptions(data); const [district, setDistrict] = useState("All"); const [role, setRole] = useState("All"); const pipeline = pipelineMetrics(data, district, role); const conversion = pipelineConversions(pipeline); const stages = [["Industry openings", pipeline.openings, null], ["Training seats", pipeline.seats, conversion.trainingCoverage], ["Candidates prepared", pipeline.readyCandidates, conversion.candidateReadiness], ["Placements", pipeline.placements, conversion.placementConversion], ["Employer feedback", pipeline.feedback, conversion.feedbackCoverage]]; return <Card className="pipeline-card"><div className="section-head"><div><div className="eyebrow">OUTCOME PIPELINE</div><h2>Demand → Training → Placement</h2><p>Actual recorded values for the selected hierarchy. No values are inferred when records are unavailable.</p></div><div className="hierarchy-controls"><label>District<select value={district} onChange={(event) => setDistrict(event.target.value)}>{options.districts.map((item) => <option key={item}>{item}</option>)}</select></label><label>Role<select value={role} onChange={(event) => setRole(event.target.value)}>{options.roles.map((item) => <option key={item}>{item}</option>)}</select></label></div></div><div className="pipeline-stages">{stages.map(([label, value, percent], index) => <div className="pipeline-stage" key={label}><div className="pipeline-node"><strong>{value}</strong><span>{label}</span></div>{percent !== null && <div className="pipeline-rate"><b>{percent}%</b><small>conversion</small></div>}{index < stages.length - 1 && <i>↓</i>}</div>)}</div><p className="data-note">Values are actual prototype records. A missing or zero stage is shown as zero; percentages are suppressed when the denominator is zero.</p></Card>; }
 function WhatChanged({ data }) { const demand = demandRows(data); const critical = skillIntelligenceRows(data).filter((row) => row.status === "Critical Gap").length; const district = data.consultations[0]?.district || "the active district"; return <Card className="changed-card"><div className="eyebrow">WHAT CHANGED?</div><h2>Current-state signal</h2><p>New employer demand is currently detected in <b>{district}</b>.</p><div className="change-list"><span><b>{data.consultations.length}</b> consultation(s) tracked</span><span><b>{demand.length}</b> demanded skills</span><span><b>{critical}</b> critical gap(s)</span><span><b>{data.placements.length}</b> placement(s) recorded</span></div><small>Historical deltas are not shown unless a prior safe snapshot exists; this summary avoids fabricating change values.</small></Card>; }

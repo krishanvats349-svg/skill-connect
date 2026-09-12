@@ -1,23 +1,112 @@
-import { getSkill, percentage, roleRequirements } from "@/lib/data";
+import { getSkill, percentage, roleRequirements } from "./data.js";
 
 const ids = (item, key = "skillIds") => Array.isArray(item?.[key]) ? item[key] : [];
 export const consultationSkills = (consultation) => ids(consultation, "requiredSkillIds");
-export const industryDemand = (data) => data.consultations.reduce((result, consultation) => {
-  const openings = Number(consultation.openings) || 0;
-  consultationSkills(consultation).forEach((skillId) => {
-    if (!result[skillId]) result[skillId] = { skillId, openings: 0, employers: new Set(), consultations: 0 };
-    result[skillId].openings += openings;
-    result[skillId].employers.add(consultation.employerId);
-    result[skillId].consultations += 1;
+
+export const industryDemand = (data) => {
+  const result = (data.consultations || []).reduce((acc, consultation) => {
+    const openings = Number(consultation.openings) || 0;
+    consultationSkills(consultation).forEach((skillId) => {
+      if (!acc[skillId]) acc[skillId] = { skillId, openings: 0, employers: new Set(), consultations: 0, jobPostings: 0 };
+      acc[skillId].openings += openings;
+      acc[skillId].employers.add(consultation.employerId);
+      acc[skillId].consultations += 1;
+    });
+    return acc;
+  }, {});
+
+  // Additive fold of external job posting signals
+  (data.jobPostings || []).forEach((posting) => {
+    const openings = Number(posting.openings) || 1;
+    (posting.skillIds || []).forEach((skillId) => {
+      if (!result[skillId]) result[skillId] = { skillId, openings: 0, employers: new Set(), consultations: 0, jobPostings: 0 };
+      result[skillId].openings += openings;
+      result[skillId].employers.add(posting.company || posting.source || posting.id);
+      result[skillId].jobPostings = (result[skillId].jobPostings || 0) + 1;
+    });
   });
+
   return result;
-}, {});
+};
+
 export const demandRows = (data) => Object.values(industryDemand(data)).map((row) => ({ ...row, employers: row.employers.size, skill: getSkill(row.skillId), level: row.openings >= 20 ? "High" : row.openings >= 10 ? "Medium" : "Emerging" }));
 export const requiredIndustrySkills = (data) => Object.keys(industryDemand(data));
-export const totalOpenings = (data) => data.consultations.reduce((sum, item) => sum + (Number(item.openings) || 0), 0);
-export const districtDemand = (data) => data.consultations.reduce((result, consultation) => { const district = consultation.district || "Unspecified"; result[district] = (result[district] || 0) + (Number(consultation.openings) || 0); return result; }, {});
+export const totalOpenings = (data) => {
+  const consultOpenings = (data.consultations || []).reduce((sum, item) => sum + (Number(item.openings) || 0), 0);
+  const postingOpenings = (data.jobPostings || []).reduce((sum, item) => sum + (Number(item.openings) || 1), 0);
+  return consultOpenings + postingOpenings;
+};
+export const districtDemand = (data) => {
+  const result = (data.consultations || []).reduce((acc, consultation) => {
+    const district = consultation.district || "Unspecified";
+    acc[district] = (acc[district] || 0) + (Number(consultation.openings) || 0);
+    return acc;
+  }, {});
+  (data.jobPostings || []).forEach((posting) => {
+    const district = posting.district || "Unspecified";
+    acc[district] = (acc[district] || 0) + (Number(posting.openings) || 1);
+  });
+  return result;
+};
+
 export const courseAnalysis = (course, data) => { const required = requiredIndustrySkills(data); const covered = ids(course).filter((skillId) => required.includes(skillId)); return { covered, missing: required.filter((skillId) => !ids(course).includes(skillId)), alignment: percentage(covered.length, required.length) }; };
 export const curriculumAnalysis = (curriculum, data) => { const required = requiredIndustrySkills(data); const covered = ids(curriculum).filter((skillId) => required.includes(skillId)); return { covered, missing: required.filter((skillId) => !ids(curriculum).includes(skillId)), alignment: percentage(covered.length, required.length) }; };
+
+export const courseSupplyStatus = (course, data) => {
+  const required = requiredIndustrySkills(data);
+  const courseSkillIds = ids(course);
+  const enrolled = Number(course.enrolled) || 0;
+  const seats = Number(course.seats) || 1;
+  const ratio = enrolled / seats;
+  const analysis = courseAnalysis(course, data);
+  const capacity = capacityRows(data);
+  const hasGapSkill = capacity.some((r) => r.gap > 0 && courseSkillIds.includes(r.skillId));
+
+  const enrolmentRatio = Math.round(ratio * 100);
+
+  if (courseSkillIds.length > 0 && !courseSkillIds.some((s) => required.includes(s))) {
+    return {
+      status: "Obsolete",
+      enrolmentRatio,
+      alignment: analysis.alignment,
+      enrolled,
+      seats,
+      reason: `None of the course skills (${courseSkillIds.map((id) => getSkill(id).name).join(", ") || "none"}) overlap with active industry demand signals.`,
+    };
+  }
+
+  if (ratio < 0.40 && analysis.alignment < 60) {
+    return {
+      status: "Oversupplied",
+      enrolmentRatio,
+      alignment: analysis.alignment,
+      enrolled,
+      seats,
+      reason: `Low enrolment utilization (${enrolled}/${seats}, ${enrolmentRatio}%) and weak curriculum alignment (${analysis.alignment}%) indicate oversupplied training capacity.`,
+    };
+  }
+
+  if (analysis.alignment >= 65 && ratio >= 0.85 && hasGapSkill) {
+    return {
+      status: "Undersupplied",
+      enrolmentRatio,
+      alignment: analysis.alignment,
+      enrolled,
+      seats,
+      reason: `High industry alignment (${analysis.alignment}%), near-capacity enrolment (${enrolled}/${seats}, ${enrolmentRatio}%), and covers capacity-constrained skills.`,
+    };
+  }
+
+  return {
+    status: "Balanced",
+    enrolmentRatio,
+    alignment: analysis.alignment,
+    enrolled,
+    seats,
+    reason: `Enrolment (${enrolled}/${seats}, ${enrolmentRatio}%) and alignment (${analysis.alignment}%) are balanced with market signals.`,
+  };
+};
+
 export const capacityRows = (data) => { const demand = industryDemand(data); const capacity = data.trainingCapacity.reduce((result, row) => { result[row.skillId] = (result[row.skillId] || 0) + (Number(row.availableSeats) || 0); return result; }, {}); return Object.values(demand).map((row) => ({ ...row, availableSeats: capacity[row.skillId] || 0, gap: row.openings - (capacity[row.skillId] || 0), skill: getSkill(row.skillId) })); };
 export const trainerAnalysis = (trainer, data) => { const required = requiredIndustrySkills(data); const skills = ids(trainer); const matched = required.filter((skillId) => skills.includes(skillId)); return { matched, missing: required.filter((skillId) => !skills.includes(skillId)), readiness: percentage(matched.length, required.length) }; };
 export const candidateAnalysis = (candidate, data) => { const required = requiredIndustrySkills(data).length ? requiredIndustrySkills(data) : roleRequirements; const skills = ids(candidate); const matched = required.filter((skillId) => skills.includes(skillId)); return { matched, missing: required.filter((skillId) => !skills.includes(skillId)), fit: percentage(matched.length, required.length) }; };
@@ -39,7 +128,7 @@ export const executiveMetrics = (data) => {
   const capacity = capacityRows(data);
   const alignments = data.courses.map((course) => courseAnalysis(course, data).alignment);
   const trainerScores = data.trainers.map((trainer) => trainerAnalysis(trainer, data).readiness);
-  return { openings: totalOpenings(data), employers: new Set(data.consultations.map((item) => item.employerId)).size, highDemandSkills: demandRows(data).filter((row) => row.level === "High").length, districtsWithGaps: capacity.some((row) => row.gap > 0) ? new Set(data.consultations.map((item) => item.district || "Unspecified")).size : 0, availableSeats: capacity.reduce((sum, row) => sum + row.availableSeats, 0), capacityGap: capacity.reduce((sum, row) => sum + row.gap, 0), courseAlignment: alignments.length ? Math.round(alignments.reduce((sum, value) => sum + value, 0) / alignments.length) : 0, trainerReadiness: trainerScores.length ? Math.round(trainerScores.reduce((sum, value) => sum + value, 0) / trainerScores.length) : 0, candidates: data.candidates.length, placements: data.placements.length, feedback: feedbackSummary(data).count };
+  return { openings: totalOpenings(data), employers: new Set([...data.consultations.map((item) => item.employerId), ...(data.jobPostings || []).map((p) => p.company)]).size, highDemandSkills: demandRows(data).filter((row) => row.level === "High").length, districtsWithGaps: capacity.some((row) => row.gap > 0) ? new Set(data.consultations.map((item) => item.district || "Unspecified")).size : 0, availableSeats: capacity.reduce((sum, row) => sum + row.availableSeats, 0), capacityGap: capacity.reduce((sum, row) => sum + row.gap, 0), courseAlignment: alignments.length ? Math.round(alignments.reduce((sum, value) => sum + value, 0) / alignments.length) : 0, trainerReadiness: trainerScores.length ? Math.round(trainerScores.reduce((sum, value) => sum + value, 0) / trainerScores.length) : 0, candidates: data.candidates.length, placements: data.placements.length, feedback: feedbackSummary(data).count };
 };
 export const feedbackIntelligence = (data) => {
   const feedback = data.employerFeedback;
@@ -58,9 +147,18 @@ export const skillPulseDetail = (skillId, data) => {
   return { ...demand, coverage, availableSeats: capacity.availableSeats, capacityGap: capacity.gap, placements, courseAlignment, status: skillIntelligenceRows(data).find((row) => row.skillId === skillId)?.status || "No current demand" };
 };
 export const districtPriorityRows = (data) => {
-  const districts = new Set([...data.consultations.map((item) => item.district), ...data.trainingCapacity.map((item) => item.district), ...data.candidates.map((item) => item.district)].filter(Boolean));
+  const districts = new Set([...data.consultations.map((item) => item.district), ...data.trainingCapacity.map((item) => item.district), ...data.candidates.map((item) => item.district), ...(data.jobPostings || []).map((item) => item.district)].filter(Boolean));
   return [...districts].map((district) => {
-    const consultations = data.consultations.filter((item) => item.district === district); const openings = consultations.reduce((sum, item) => sum + (Number(item.openings) || 0), 0); const seats = data.trainingCapacity.filter((item) => item.district === district).reduce((sum, item) => sum + (Number(item.availableSeats) || 0), 0); const criticalSkills = capacityRows(data).filter((row) => row.gap > 0 && data.trainingCapacity.some((item) => item.district === district && item.skillId === row.skillId)).map((row) => row.skill.name); const candidates = data.candidates.filter((item) => item.district === district).length; const placements = data.placements.filter((item) => item.district === district).length; const gap = openings - seats; const priority = gap > 0 && criticalSkills.length >= 2 ? "Critical Intervention" : gap > 0 ? "High Priority" : openings ? "Monitor" : "Balanced"; return { district, openings, seats, gap, criticalSkills, institutes: new Set(data.trainingCapacity.filter((item) => item.district === district).map((item) => item.instituteId).filter(Boolean)).size, candidates, placements, priority };
+    const consultations = data.consultations.filter((item) => item.district === district);
+    const postings = (data.jobPostings || []).filter((item) => item.district === district);
+    const openings = consultations.reduce((sum, item) => sum + (Number(item.openings) || 0), 0) + postings.reduce((sum, item) => sum + (Number(item.openings) || 1), 0);
+    const seats = data.trainingCapacity.filter((item) => item.district === district).reduce((sum, item) => sum + (Number(item.availableSeats) || 0), 0);
+    const criticalSkills = capacityRows(data).filter((row) => row.gap > 0 && data.trainingCapacity.some((item) => item.district === district && item.skillId === row.skillId)).map((row) => row.skill.name);
+    const candidates = data.candidates.filter((item) => item.district === district).length;
+    const placements = data.placements.filter((item) => item.district === district).length;
+    const gap = openings - seats;
+    const priority = gap > 0 && criticalSkills.length >= 2 ? "Critical Intervention" : gap > 0 ? "High Priority" : openings ? "Monitor" : "Balanced";
+    return { district, openings, seats, gap, criticalSkills, institutes: new Set(data.trainingCapacity.filter((item) => item.district === district).map((item) => item.instituteId).filter(Boolean)).size, candidates, placements, priority };
   }).sort((a, b) => b.gap - a.gap);
 };
 export const simulateIntervention = (data, { skillId, additionalSeats, additionalTrainers, curriculumSkill }) => {
@@ -73,8 +171,146 @@ export const priorityActions = (data) => {
   rows.filter((row) => !row.coverage.curriculum).sort((a, b) => b.openings - a.openings).slice(0, 2).forEach((row) => actions.push({ id: `curriculum-${row.skillId}`, type: "Curriculum", priority: actionPriority(row.openings + 20), score: Math.min(100, row.openings + 20), location: "District-wide", issue: `${row.skill.name} is demanded by employers but missing from curriculum coverage.`, evidence: `${row.openings} openings · ${row.employers} employer(s) · curriculum missing`, action: `Add ${row.skill.name} to the selected curriculum.`, affected: "curriculum", skillId: row.skillId }));
   rows.filter((row) => row.level === "High" && row.coverage.trainers <= 1).sort((a, b) => b.openings - a.openings).slice(0, 2).forEach((row) => actions.push({ id: `trainer-${row.skillId}`, type: "Trainer", priority: actionPriority(row.openings + 10), score: Math.min(100, row.openings + 10), location: "District-wide", issue: `${row.skill.name} demand is high while trainer coverage is low.`, evidence: `${row.openings} openings · ${row.coverage.trainers} trainer(s) · high demand`, action: `Prioritize ${row.skill.name} trainer upskilling.`, affected: "trainers", skillId: row.skillId }));
   rows.filter((row) => row.level === "High" && row.coverage.candidates < Math.max(2, row.employers * 2)).slice(0, 2).forEach((row) => actions.push({ id: `candidate-${row.skillId}`, type: "Candidate", priority: actionPriority(row.openings), score: Math.min(100, row.openings), location: "District-wide", issue: `Candidates have limited ${row.skill.name} coverage against current demand.`, evidence: `${row.openings} openings · ${row.coverage.candidates} candidate(s) with skill`, action: `Add targeted ${row.skill.name} learning to candidate pathways.`, affected: "candidates", skillId: row.skillId }));
+
+  // Flag obsolete and oversupplied courses
+  (data.courses || []).forEach((course) => {
+    const supply = courseSupplyStatus(course, data);
+    if (supply.status === "Obsolete") {
+      actions.push({
+        id: `course-obsolete-${course.id}`,
+        type: "Course",
+        priority: "Critical",
+        score: 88,
+        location: data.trainingInstitutes?.find((i) => i.id === course.instituteId)?.district || "Pune",
+        issue: `Course "${course.name}" is obsolete with zero industry demand overlap.`,
+        evidence: supply.reason,
+        action: `Retire or overhaul "${course.name}" to teach in-demand skills.`,
+        affected: "courses",
+        skillId: course.skillIds[0] || "legacy-office",
+        courseId: course.id,
+        status: supply.status,
+      });
+    } else if (supply.status === "Oversupplied") {
+      actions.push({
+        id: `course-oversupplied-${course.id}`,
+        type: "Course",
+        priority: "High",
+        score: 68,
+        location: data.trainingInstitutes?.find((i) => i.id === course.instituteId)?.district || "Pune",
+        issue: `Course "${course.name}" is oversupplied relative to market alignment.`,
+        evidence: supply.reason,
+        action: `Reduce allocated seats or update curriculum for "${course.name}".`,
+        affected: "courses",
+        skillId: course.skillIds[0] || "excel",
+        courseId: course.id,
+        status: supply.status,
+      });
+    }
+  });
+
   return actions.sort((a, b) => b.score - a.score);
 };
+
+export const generateDistrictTrainingPlan = (district, data) => {
+  const targetDistrict = district || "Pune";
+  const consults = (data.consultations || []).filter((c) => c.district === targetDistrict);
+  const postings = (data.jobPostings || []).filter((p) => p.district === targetDistrict);
+  const totalDistrictOpenings = consults.reduce((s, c) => s + (Number(c.openings) || 0), 0) +
+    postings.reduce((s, p) => s + (Number(p.openings) || 1), 0);
+  const employers = new Set([...consults.map((c) => c.employerId), ...postings.map((p) => p.company)]);
+  const roles = [...new Set([...consults.map((c) => c.role || c.title), ...postings.map((p) => p.title)])];
+
+  const demand = demandRows(data);
+  const allCapacity = capacityRows(data);
+  const districtCaps = (data.trainingCapacity || []).filter((c) => c.district === targetDistrict);
+
+  // Capacity gaps in this district
+  const capacityGaps = allCapacity
+    .filter((row) => row.gap > 0 && (districtCaps.length === 0 || districtCaps.some((c) => c.skillId === row.skillId)))
+    .map((row) => ({
+      skillId: row.skillId,
+      skillName: row.skill.name,
+      openings: row.openings,
+      availableSeats: row.availableSeats,
+      gap: row.gap,
+      level: row.level,
+    }));
+
+  // Recommended seat increases
+  const recommendedSeatIncreases = capacityGaps.map((gap) => ({
+    skillId: gap.skillId,
+    skillName: gap.skillName,
+    currentSeats: gap.availableSeats,
+    recommendedIncrease: gap.gap,
+    targetCapacity: gap.availableSeats + gap.gap,
+    reason: `Expand ${gap.skillName} capacity by ${gap.gap} seats to eliminate the shortage across ${gap.openings} active vacancies.`,
+  }));
+
+  // Trainer upskilling recommendations
+  const districtInstitutes = new Set((data.trainingInstitutes || []).filter((i) => i.district === targetDistrict).map((i) => i.id));
+  const districtTrainers = (data.trainers || []).filter((t) => districtInstitutes.has(t.instituteId) || !districtInstitutes.size);
+  const recommendedTrainerUpskilling = districtTrainers.flatMap((trainer) => {
+    const analysis = trainerAnalysis(trainer, data);
+    if (!analysis.missing.length) return [];
+    return [{
+      trainerId: trainer.id,
+      trainerName: trainer.name,
+      experience: trainer.experience,
+      missingSkills: analysis.missing.map((id) => getSkill(id).name),
+      recommendedSkills: analysis.missing.slice(0, 2).map((id) => getSkill(id).name).join(" and "),
+      reason: `${trainer.name} (${trainer.experience}) matches ${analysis.matched.length} demanded skills (${analysis.readiness}% readiness). Upskilling in ${analysis.missing.map((id) => getSkill(id).name).join(", ")} develops district instructional readiness.`,
+    }];
+  });
+
+  // Recommended curriculum changes
+  const recommendedCurriculumChanges = (data.curriculums || []).flatMap((curr) => {
+    const analysis = curriculumAnalysis(curr, data);
+    if (!analysis.missing.length) return [];
+    return [{
+      curriculumId: curr.id,
+      curriculumName: curr.name,
+      owner: curr.owner,
+      alignment: analysis.alignment,
+      missingSkills: analysis.missing.map((id) => getSkill(id).name),
+      action: `Incorporate ${analysis.missing.map((id) => getSkill(id).name).join(", ")} into curriculum framework.`,
+      reason: `Current curriculum alignment is ${analysis.alignment}%. Adding demanded skills aligns government standards with live employer requirements.`,
+    }];
+  });
+
+  // Obsolete & Oversupplied courses to retire or rationalize
+  const obsoleteCoursesToRetire = (data.courses || [])
+    .map((course) => ({ course, supply: courseSupplyStatus(course, data) }))
+    .filter(({ supply }) => supply.status === "Obsolete" || supply.status === "Oversupplied")
+    .map(({ course, supply }) => ({
+      courseId: course.id,
+      courseName: course.name,
+      seats: course.seats,
+      enrolled: course.enrolled,
+      status: supply.status,
+      reason: supply.reason,
+      action: supply.status === "Obsolete"
+        ? `Decommission "${course.name}" and redeploy instructional capacity to high-deficit courses.`
+        : `Reduce intake from ${course.seats} to ${Math.max(course.enrolled, 15)} seats and revamp coursework.`,
+    }));
+
+  return {
+    district: targetDistrict,
+    totalOpenings: totalDistrictOpenings,
+    generatedAt: "12 Sep 2026",
+    demandSummary: {
+      totalOpenings: totalDistrictOpenings,
+      activeEmployers: employers.size,
+      topDemandedSkills: demand.slice(0, 5).map((d) => ({ name: d.skill.name, openings: d.openings, level: d.level })),
+      primaryRoles: roles.slice(0, 4),
+    },
+    capacityGaps,
+    recommendedSeatIncreases,
+    recommendedTrainerUpskilling,
+    recommendedCurriculumChanges,
+    obsoleteCoursesToRetire,
+  };
+};
+
 export const pipelineMetrics = (data, district = "All", role = "All") => {
   const consultations = data.consultations.filter((item) => (district === "All" || item.district === district) && (role === "All" || item.role === role)); const openings = consultations.reduce((sum, item) => sum + (Number(item.openings) || 0), 0); const seats = data.trainingCapacity.filter((item) => district === "All" || item.district === district).reduce((sum, item) => sum + (Number(item.availableSeats) || 0), 0); const candidates = data.candidates.filter((candidate) => district === "All" || candidate.district === district); const placements = data.placements.filter((placement) => district === "All" || placement.district === district); const placementIds = new Set(placements.map((placement) => placement.id)); const feedback = data.employerFeedback.filter((item) => placementIds.has(item.placementId)); const readyCandidates = candidates.filter((candidate) => candidateAnalysis(candidate, data).fit >= 80).length; return { openings, seats, candidates: candidates.length, readyCandidates, placements: placements.length, feedback: feedback.length, district, role };
 };
