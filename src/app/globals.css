@@ -110,3 +110,17 @@
 .custom-chart-tooltip b { display: block; color: var(--navy); font-size: 12px; margin-bottom: 4px; }
 .custom-chart-tooltip p { margin: 2px 0; color: var(--muted); }
 .custom-chart-tooltip span { font-weight: 700; color: var(--teal); }
+.language-toggle { border:1px solid var(--line); border-radius:5px; padding:7px 9px; background:#f7faf7; color:var(--teal); font-size:11px; font-weight:700; }
+.language-toggle:hover { background:#e8f3ef; }
+.district-heatmap-card { margin-top:18px; }
+.district-heatmap { display:grid; gap:8px; }
+.district-heatmap-row { display:grid; grid-template-columns:1fr auto; align-items:center; gap:14px; min-height:44px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; }
+.district-heatmap-row b { font-size:12px; }
+.district-heatmap-value { font-size:11px; font-weight:700; }
+.heatmap-cell-low { background:#e7f5ee; color:#297b5d; }
+.heatmap-cell-medium { background:#b9dfca; color:#1d624c; }
+.heatmap-cell-high { background:#5eaa82; color:#fff; }
+.heatmap-cell-neutral { background:#f7faf7; color:var(--muted); }
+.heatmap-legend { display:flex; align-items:center; gap:6px; margin-top:14px; color:var(--muted); font-size:10px; }
+.heatmap-swatch { width:18px; height:12px; border:1px solid rgba(25,121,107,.12); border-radius:3px; }
+@media (max-width:720px) { .heatmap-legend { flex-wrap:wrap; }.district-heatmap-row { min-height:40px; } }

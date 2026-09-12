@@ -17,22 +17,22 @@ export const navItems = {
 };
 
 export const skillCatalog = [
-  { id: "python", name: "Python", family: "Technical", demand: 18 },
-  { id: "sql", name: "SQL", family: "Technical", demand: 22 },
-  { id: "data-analysis", name: "Data Analysis", family: "Analytics", demand: 20 },
-  { id: "power-bi", name: "Power BI", family: "Analytics", demand: 16 },
-  { id: "communication", name: "Communication", family: "Professional", demand: 14 },
-  { id: "excel", name: "Advanced Excel", family: "Analytics", demand: 12 },
-  { id: "statistics", name: "Statistics", family: "Analytics", demand: 9 },
-  { id: "legacy-office", name: "Desktop Publishing & Office Typing", family: "Legacy Administration", demand: 0 },
+  { id: "python", name: "Python", code: "NCO-2514.01", family: "Technical", demand: 18 },
+  { id: "sql", name: "SQL", code: "NCO-2511.02", family: "Technical", demand: 22 },
+  { id: "data-analysis", name: "Data Analysis", code: "NCO-2421.03", family: "Analytics", demand: 20 },
+  { id: "power-bi", name: "Power BI", code: "NCO-2521.04", family: "Analytics", demand: 16 },
+  { id: "communication", name: "Communication", code: "NCO-2424.01", family: "Professional", demand: 14 },
+  { id: "excel", name: "Advanced Excel", code: "NCO-3313.02", family: "Analytics", demand: 12 },
+  { id: "statistics", name: "Statistics", code: "NCO-2122.01", family: "Analytics", demand: 9 },
+  { id: "legacy-office", name: "Desktop Publishing & Office Typing", code: "NCO-4131.01", family: "Legacy Administration", demand: 0 },
   // Healthcare Sector
-  { id: "clinical-data", name: "Clinical Data Management", family: "Healthcare Analytics", demand: 14 },
-  { id: "health-informatics", name: "Health Informatics & EHR", family: "Healthcare", demand: 12 },
-  { id: "medical-coding", name: "Medical Coding & Billing", family: "Healthcare", demand: 10 },
+  { id: "clinical-data", name: "Clinical Data Management", code: "NCO-3252.03", family: "Healthcare Analytics", demand: 14 },
+  { id: "health-informatics", name: "Health Informatics & EHR", code: "NCO-3252.04", family: "Healthcare", demand: 12 },
+  { id: "medical-coding", name: "Medical Coding & Billing", code: "NCO-3252.01", family: "Healthcare", demand: 10 },
   // Advanced Manufacturing Sector
-  { id: "plc-automation", name: "PLC & Industrial Automation", family: "Manufacturing", demand: 16 },
-  { id: "cad-design", name: "CAD / CAM Engineering Design", family: "Manufacturing", demand: 15 },
-  { id: "quality-assurance", name: "Industrial Quality Assurance", family: "Manufacturing", demand: 11 },
+  { id: "plc-automation", name: "PLC & Industrial Automation", code: "NCO-3139.02", family: "Manufacturing", demand: 16 },
+  { id: "cad-design", name: "CAD / CAM Engineering Design", code: "NCO-3118.01", family: "Manufacturing", demand: 15 },
+  { id: "quality-assurance", name: "Industrial Quality Assurance", code: "NCO-3122.02", family: "Manufacturing", demand: 11 },
 ];
 
 export const skillProficiency = {
