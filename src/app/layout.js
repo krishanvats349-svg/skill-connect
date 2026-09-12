@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "SkillConnect | Pune District Skill Intelligence",
+  title: "SkillConnect | Maharashtra Multi-District Skill Intelligence",
   description: "A connected intelligence platform for government, employers, training partners, trainers, and candidates.",
 };
 

@@ -1,4 +1,22 @@
-import { getSkill, percentage, roleRequirements } from "./data.js";
+import { getSkill, percentage, roleRequirements, requiredProficiency, skillProficiency } from "./data.js";
+
+export const proficiencyScale = {
+  Beginner: 1,
+  Intermediate: 2,
+  Advanced: 3,
+};
+
+export const getProficiencyLevel = (entityId, skillId, data = null) => {
+  const map = data?.skillProficiency || skillProficiency;
+  return map?.[entityId]?.[skillId] || null;
+};
+
+export const getRequiredProficiency = (skillId, employerOrConsultation = null, data = null) => {
+  return employerOrConsultation?.requiredProficiency?.[skillId] ||
+    data?.requiredProficiency?.[skillId] ||
+    requiredProficiency[skillId] ||
+    "Intermediate";
+};
 
 const ids = (item, key = "skillIds") => Array.isArray(item?.[key]) ? item[key] : [];
 export const consultationSkills = (consultation) => ids(consultation, "requiredSkillIds");
@@ -107,9 +125,144 @@ export const courseSupplyStatus = (course, data) => {
   };
 };
 
-export const capacityRows = (data) => { const demand = industryDemand(data); const capacity = data.trainingCapacity.reduce((result, row) => { result[row.skillId] = (result[row.skillId] || 0) + (Number(row.availableSeats) || 0); return result; }, {}); return Object.values(demand).map((row) => ({ ...row, availableSeats: capacity[row.skillId] || 0, gap: row.openings - (capacity[row.skillId] || 0), skill: getSkill(row.skillId) })); };
-export const trainerAnalysis = (trainer, data) => { const required = requiredIndustrySkills(data); const skills = ids(trainer); const matched = required.filter((skillId) => skills.includes(skillId)); return { matched, missing: required.filter((skillId) => !skills.includes(skillId)), readiness: percentage(matched.length, required.length) }; };
-export const candidateAnalysis = (candidate, data) => { const required = requiredIndustrySkills(data).length ? requiredIndustrySkills(data) : roleRequirements; const skills = ids(candidate); const matched = required.filter((skillId) => skills.includes(skillId)); return { matched, missing: required.filter((skillId) => !skills.includes(skillId)), fit: percentage(matched.length, required.length) }; };
+export const capacityRows = (data, targetDistrict = null) => {
+  const hasFilter = Boolean(targetDistrict && targetDistrict !== "All");
+
+  let demandMap = {};
+  if (hasFilter) {
+    (data.consultations || []).filter((c) => c.district === targetDistrict).forEach((consultation) => {
+      const openings = Number(consultation.openings) || 0;
+      consultationSkills(consultation).forEach((skillId) => {
+        if (!demandMap[skillId]) demandMap[skillId] = { skillId, openings: 0, employers: new Set(), consultations: 0, jobPostings: 0 };
+        demandMap[skillId].openings += openings;
+        demandMap[skillId].employers.add(consultation.employerId);
+        demandMap[skillId].consultations += 1;
+      });
+    });
+    (data.jobPostings || []).filter((p) => p.district === targetDistrict).forEach((posting) => {
+      const openings = Number(posting.openings) || 1;
+      (posting.skillIds || []).forEach((skillId) => {
+        if (!demandMap[skillId]) demandMap[skillId] = { skillId, openings: 0, employers: new Set(), consultations: 0, jobPostings: 0 };
+        demandMap[skillId].openings += openings;
+        demandMap[skillId].employers.add(posting.company || posting.source || posting.id);
+        demandMap[skillId].jobPostings = (demandMap[skillId].jobPostings || 0) + 1;
+      });
+    });
+  } else {
+    demandMap = industryDemand(data);
+  }
+
+  const capacity = (data.trainingCapacity || [])
+    .filter((row) => !hasFilter || row.district === targetDistrict)
+    .reduce((result, row) => {
+      result[row.skillId] = (result[row.skillId] || 0) + (Number(row.availableSeats) || 0);
+      return result;
+    }, {});
+
+  const allSkillIds = new Set([...Object.keys(demandMap), ...Object.keys(capacity)]);
+
+  return Array.from(allSkillIds).map((skillId) => {
+    const row = demandMap[skillId] || { skillId, openings: 0, employers: new Set(), consultations: 0, jobPostings: 0 };
+    const availableSeats = capacity[skillId] || 0;
+    const openings = row.openings || 0;
+    const employersCount = row.employers instanceof Set ? row.employers.size : (Number(row.employers) || 0);
+    return {
+      skillId,
+      openings,
+      employers: employersCount,
+      consultations: row.consultations || 0,
+      jobPostings: row.jobPostings || 0,
+      availableSeats,
+      gap: openings - availableSeats,
+      level: openings >= 20 ? "High" : openings >= 10 ? "Medium" : "Emerging",
+      skill: getSkill(skillId),
+    };
+  });
+};
+
+export const trainerAnalysis = (trainer, data, options = {}) => {
+  const required = requiredIndustrySkills(data);
+  const skills = ids(trainer);
+  const matched = required.filter((skillId) => skills.includes(skillId));
+  const missing = required.filter((skillId) => !skills.includes(skillId));
+
+  const trainerProf = data?.skillProficiency?.[trainer.id] || skillProficiency[trainer.id] || {};
+  const reqProf = data?.requiredProficiency || requiredProficiency;
+
+  let proficiencyPoints = 0;
+  const proficiencyBreakdown = {};
+  const proficiencyGaps = [];
+
+  matched.forEach((skillId) => {
+    const level = trainerProf[skillId] || "Intermediate";
+    const reqLevel = reqProf[skillId] || "Intermediate";
+    const scaleVal = proficiencyScale[level] || 1;
+    const reqVal = proficiencyScale[reqLevel] || 1;
+    const meetsRequirement = scaleVal >= reqVal;
+    const score = Math.min(1, scaleVal / reqVal);
+    proficiencyPoints += score;
+    proficiencyBreakdown[skillId] = { level, requiredLevel: reqLevel, meetsRequirement, score };
+    if (!meetsRequirement) {
+      proficiencyGaps.push(skillId);
+    }
+  });
+
+  const unweightedReadiness = percentage(matched.length, required.length);
+  const weightedReadiness = required.length ? Math.round((proficiencyPoints / required.length) * 100) : 0;
+  const readiness = options.weightProficiency ? weightedReadiness : unweightedReadiness;
+
+  return {
+    matched,
+    missing,
+    readiness,
+    unweightedReadiness,
+    weightedReadiness,
+    proficiencyBreakdown,
+    proficiencyGaps,
+  };
+};
+
+export const candidateAnalysis = (candidate, data, options = {}) => {
+  const required = requiredIndustrySkills(data).length ? requiredIndustrySkills(data) : roleRequirements;
+  const skills = ids(candidate);
+  const matched = required.filter((skillId) => skills.includes(skillId));
+  const missing = required.filter((skillId) => !skills.includes(skillId));
+
+  const candidateProf = data?.skillProficiency?.[candidate.id] || skillProficiency[candidate.id] || {};
+  const reqProf = data?.requiredProficiency || requiredProficiency;
+
+  let proficiencyPoints = 0;
+  const proficiencyBreakdown = {};
+  const proficiencyGaps = [];
+
+  matched.forEach((skillId) => {
+    const level = candidateProf[skillId] || "Intermediate";
+    const reqLevel = reqProf[skillId] || "Intermediate";
+    const scaleVal = proficiencyScale[level] || 1;
+    const reqVal = proficiencyScale[reqLevel] || 1;
+    const meetsRequirement = scaleVal >= reqVal;
+    const score = Math.min(1, scaleVal / reqVal);
+    proficiencyPoints += score;
+    proficiencyBreakdown[skillId] = { level, requiredLevel: reqLevel, meetsRequirement, score };
+    if (!meetsRequirement) {
+      proficiencyGaps.push(skillId);
+    }
+  });
+
+  const unweightedFit = percentage(matched.length, required.length);
+  const weightedFit = required.length ? Math.round((proficiencyPoints / required.length) * 100) : 0;
+  const fit = options.weightProficiency ? weightedFit : unweightedFit;
+
+  return {
+    matched,
+    missing,
+    fit,
+    unweightedFit,
+    weightedFit,
+    proficiencyBreakdown,
+    proficiencyGaps,
+  };
+};
 export const feedbackSummary = (data) => { const ratings = data.employerFeedback.map((item) => Number(item.rating)).filter(Boolean); return { count: ratings.length, average: ratings.length ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1) : "0.0" }; };
 export const coverageForSkill = (skillId, data) => {
   const courses = data.courses.filter((course) => ids(course).includes(skillId)).length;
@@ -175,13 +328,15 @@ export const priorityActions = (data) => {
   // Flag obsolete and oversupplied courses
   (data.courses || []).forEach((course) => {
     const supply = courseSupplyStatus(course, data);
+    const institute = data.trainingInstitutes?.find((i) => i.id === course.instituteId);
+    const location = institute?.district || "District-wide";
     if (supply.status === "Obsolete") {
       actions.push({
         id: `course-obsolete-${course.id}`,
         type: "Course",
         priority: "Critical",
         score: 88,
-        location: data.trainingInstitutes?.find((i) => i.id === course.instituteId)?.district || "Pune",
+        location,
         issue: `Course "${course.name}" is obsolete with zero industry demand overlap.`,
         evidence: supply.reason,
         action: `Retire or overhaul "${course.name}" to teach in-demand skills.`,
@@ -196,7 +351,7 @@ export const priorityActions = (data) => {
         type: "Course",
         priority: "High",
         score: 68,
-        location: data.trainingInstitutes?.find((i) => i.id === course.instituteId)?.district || "Pune",
+        location,
         issue: `Course "${course.name}" is oversupplied relative to market alignment.`,
         evidence: supply.reason,
         action: `Reduce allocated seats or update curriculum for "${course.name}".`,
@@ -212,7 +367,7 @@ export const priorityActions = (data) => {
 };
 
 export const generateDistrictTrainingPlan = (district, data) => {
-  const targetDistrict = district || "Pune";
+  const targetDistrict = district || data.districts?.[0]?.name || "Pune";
   const consults = (data.consultations || []).filter((c) => c.district === targetDistrict);
   const postings = (data.jobPostings || []).filter((p) => p.district === targetDistrict);
   const totalDistrictOpenings = consults.reduce((s, c) => s + (Number(c.openings) || 0), 0) +
@@ -220,13 +375,10 @@ export const generateDistrictTrainingPlan = (district, data) => {
   const employers = new Set([...consults.map((c) => c.employerId), ...postings.map((p) => p.company)]);
   const roles = [...new Set([...consults.map((c) => c.role || c.title), ...postings.map((p) => p.title)])];
 
-  const demand = demandRows(data);
-  const allCapacity = capacityRows(data);
-  const districtCaps = (data.trainingCapacity || []).filter((c) => c.district === targetDistrict);
-
-  // Capacity gaps in this district
-  const capacityGaps = allCapacity
-    .filter((row) => row.gap > 0 && (districtCaps.length === 0 || districtCaps.some((c) => c.skillId === row.skillId)))
+  // District-specific demand and capacity rows
+  const districtCapacity = capacityRows(data, targetDistrict);
+  const capacityGaps = districtCapacity
+    .filter((row) => row.gap > 0)
     .map((row) => ({
       skillId: row.skillId,
       skillName: row.skill.name,
@@ -243,22 +395,23 @@ export const generateDistrictTrainingPlan = (district, data) => {
     currentSeats: gap.availableSeats,
     recommendedIncrease: gap.gap,
     targetCapacity: gap.availableSeats + gap.gap,
-    reason: `Expand ${gap.skillName} capacity by ${gap.gap} seats to eliminate the shortage across ${gap.openings} active vacancies.`,
+    reason: `Expand ${gap.skillName} capacity by ${gap.gap} seats to eliminate the shortage across ${gap.openings} active vacancies in ${targetDistrict}.`,
   }));
 
-  // Trainer upskilling recommendations
+  // Trainer upskilling recommendations for trainers in target district
   const districtInstitutes = new Set((data.trainingInstitutes || []).filter((i) => i.district === targetDistrict).map((i) => i.id));
   const districtTrainers = (data.trainers || []).filter((t) => districtInstitutes.has(t.instituteId) || !districtInstitutes.size);
   const recommendedTrainerUpskilling = districtTrainers.flatMap((trainer) => {
     const analysis = trainerAnalysis(trainer, data);
-    if (!analysis.missing.length) return [];
+    const upskillSkills = [...new Set([...analysis.missing, ...(analysis.proficiencyGaps || [])])];
+    if (!upskillSkills.length) return [];
     return [{
       trainerId: trainer.id,
       trainerName: trainer.name,
       experience: trainer.experience,
-      missingSkills: analysis.missing.map((id) => getSkill(id).name),
-      recommendedSkills: analysis.missing.slice(0, 2).map((id) => getSkill(id).name).join(" and "),
-      reason: `${trainer.name} (${trainer.experience}) matches ${analysis.matched.length} demanded skills (${analysis.readiness}% readiness). Upskilling in ${analysis.missing.map((id) => getSkill(id).name).join(", ")} develops district instructional readiness.`,
+      missingSkills: upskillSkills.map((id) => getSkill(id).name),
+      recommendedSkills: upskillSkills.slice(0, 2).map((id) => getSkill(id).name).join(" and "),
+      reason: `${trainer.name} (${trainer.experience}) matches ${analysis.matched.length} demanded skills (${analysis.readiness}% readiness). Upskilling in ${upskillSkills.map((id) => getSkill(id).name).join(", ")} develops ${targetDistrict} instructional readiness.`,
     }];
   });
 
@@ -277,8 +430,13 @@ export const generateDistrictTrainingPlan = (district, data) => {
     }];
   });
 
-  // Obsolete & Oversupplied courses to retire or rationalize
-  const obsoleteCoursesToRetire = (data.courses || [])
+  // Obsolete & Oversupplied courses in target district to retire or rationalize
+  const districtCourses = (data.courses || []).filter((course) => {
+    const inst = (data.trainingInstitutes || []).find((i) => i.id === course.instituteId);
+    return districtInstitutes.size ? districtInstitutes.has(course.instituteId) : (inst?.district === targetDistrict);
+  });
+
+  const obsoleteCoursesToRetire = (districtCourses.length ? districtCourses : data.courses || [])
     .map((course) => ({ course, supply: courseSupplyStatus(course, data) }))
     .filter(({ supply }) => supply.status === "Obsolete" || supply.status === "Oversupplied")
     .map(({ course, supply }) => ({
@@ -289,7 +447,7 @@ export const generateDistrictTrainingPlan = (district, data) => {
       status: supply.status,
       reason: supply.reason,
       action: supply.status === "Obsolete"
-        ? `Decommission "${course.name}" and redeploy instructional capacity to high-deficit courses.`
+        ? `Decommission "${course.name}" and redeploy instructional capacity to high-deficit courses in ${targetDistrict}.`
         : `Reduce intake from ${course.seats} to ${Math.max(course.enrolled, 15)} seats and revamp coursework.`,
     }));
 
@@ -300,7 +458,7 @@ export const generateDistrictTrainingPlan = (district, data) => {
     demandSummary: {
       totalOpenings: totalDistrictOpenings,
       activeEmployers: employers.size,
-      topDemandedSkills: demand.slice(0, 5).map((d) => ({ name: d.skill.name, openings: d.openings, level: d.level })),
+      topDemandedSkills: districtCapacity.slice().sort((a, b) => b.openings - a.openings).slice(0, 5).map((d) => ({ name: d.skill.name, openings: d.openings, level: d.level })),
       primaryRoles: roles.slice(0, 4),
     },
     capacityGaps,

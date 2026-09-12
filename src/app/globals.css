@@ -78,3 +78,35 @@
   table { border-collapse: collapse !important; width: 100% !important; font-size: 9pt !important; }
   th, td { border: 1px solid #777 !important; padding: 5px 7px !important; }
 }
+
+/* Proficiency Pill Styling */
+.skill-badge-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.proficiency-pill {
+  font-size: 8.5px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 2px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: inline-block;
+  line-height: 1.2;
+}
+.proficiency-pill.advanced { background: #dff5e8; color: #1b6d44; border: 1px solid #a8e3be; }
+.proficiency-pill.intermediate { background: #e6f0fa; color: #1e5a91; border: 1px solid #bad6f2; }
+.proficiency-pill.beginner { background: #fff5de; color: #875c0c; border: 1px solid #f6dda4; }
+
+/* Recharts & Visualizations */
+.chart-card { margin-bottom: 18px; }
+.chart-card h2 { margin-bottom: 4px; }
+.chart-container { width: 100%; height: 280px; margin-top: 14px; position: relative; }
+.custom-chart-tooltip {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  font-size: 11px;
+}
+.custom-chart-tooltip b { display: block; color: var(--navy); font-size: 12px; margin-bottom: 4px; }
+.custom-chart-tooltip p { margin: 2px 0; color: var(--muted); }
+.custom-chart-tooltip span { font-weight: 700; color: var(--teal); }

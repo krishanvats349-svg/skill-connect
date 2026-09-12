@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { getSkill, initialData, navItems, normalizeData, roleLabels, roleRequirements, skillCatalog, skillNames } from "@/lib/data";
+import { getSkill, initialData, navItems, normalizeData, requiredProficiency, roleLabels, roleRequirements, skillCatalog, skillNames, skillProficiency } from "@/lib/data";
 import { capacityRows, candidateAnalysis, courseAnalysis, courseSupplyStatus, curriculumAnalysis, demandRows, districtDemand, districtPriorityRows, executiveMetrics, feedbackIntelligence, feedbackSummary, generateDistrictTrainingPlan, hierarchyOptions, pipelineConversions, pipelineMetrics, priorityActions, prototypeImpactScore, requiredIndustrySkills, simulateIntervention, skillIntelligenceRows, skillPulseDetail, totalOpenings, trainerAnalysis } from "@/lib/analytics";
 import { firebaseEnabled } from "@/lib/firebase";
 import { loadRemoteData, persistEntity, storageMode } from "@/lib/storage";
 import SkillPulseCommandCenter from "@/app/skill-pulse";
 import { authenticateLocal, DEMO_PASSWORD, getDemoUser } from "@/lib/auth";
 import GuidedDemo from "@/app/guided-demo";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 const clone = () => JSON.parse(JSON.stringify(initialData));
 const emptySubscribe = () => () => {};
@@ -26,20 +27,40 @@ function Metric({ label, value, detail, tone = "blue" }) { return <Card classNam
 function Progress({ value, tone = "blue" }) { return <div className="progress"><span className={`progress-fill fill-${tone}`} style={{ width: `${Math.max(0, Math.min(value || 0, 100))}%` }} /></div>; }
 function Table({ children }) { return <div className="table-wrap"><table>{children}</table></div>; }
 function EmptyState({ title, body }) { return <div className="empty"><span>◌</span><strong>{title}</strong><p>{body}</p></div>; }
-function SkillTags({ ids = [] }) { return <div className="tag-list">{ids.map((id) => <Badge key={id}>{getSkill(id).name}</Badge>)}</div>; }
+function SkillTags({ ids = [], entityId = null, proficiencies = null, data = null }) {
+  const profMap = proficiencies || (entityId && data?.skillProficiency?.[entityId]) || (entityId && skillProficiency?.[entityId]) || null;
+  return (
+    <div className="tag-list">
+      {ids.map((id) => {
+        const level = profMap?.[id];
+        return (
+          <span key={id} className="skill-badge-wrap">
+            <Badge>{getSkill(id).name}</Badge>
+            {level && (
+              <small className={`proficiency-pill ${level.toLowerCase()}`}>
+                {level.slice(0, 3)}
+              </small>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function LoginPage({ onSelect, onDemo }) {
   const [form, setForm] = useState({ email: "", password: "" }); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const submit = (event) => { event.preventDefault(); if (!form.email.trim() || !form.password) { setError("Enter both email and password to continue."); return; } setBusy(true); window.setTimeout(() => { const result = authenticateLocal(form.email, form.password); if (result.ok) { setError(""); onSelect(result.user); } else { setError(result.message); setBusy(false); } }, 250); };
-  return <main className="login-page"><div className="login-brand"><div className="brand-mark">SC</div><span>Skill<span>Connect</span></span></div><div className="login-copy"><div className="eyebrow">SIH 2026 · Pune district pilot</div><h1>Make skills visible.<br /><em>Make opportunity</em> actionable.</h1><p>A connected intelligence platform for government, employers, training partners, trainers, and candidates.</p><div className="login-proof"><span>01</span><div><b>One connected skills graph</b><small>Demand, supply, readiness, and outcomes in one workspace.</small></div></div><div className="login-proof"><span>02</span><div><b>Explainable decisions</b><small>Every recommendation traces back to current records.</small></div></div></div><div className="login-card-stack"><Card className="login-card"><div className="card-kicker">SECURE WORKSPACE</div><h2>Sign in to SkillConnect</h2><p className="muted">Use your organization account to open its role-based workspace.</p><form onSubmit={submit} className="login-form"><label>Email address<input type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@organization.in" /></label><label>Password<input type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Enter your password" /></label>{error && <div className="login-error" role="alert">{error}</div>}<Button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button></form><p className="login-helper">Prototype sign-in uses the local session adapter. Demo password: <b>{DEMO_PASSWORD}</b></p></Card><Card className="demo-card"><div className="demo-heading"><div><div className="card-kicker">SIH PRESENTATION MODE</div><h2>Demo Access</h2></div><Badge tone="yellow">Fast entry</Badge></div><p className="muted">Jump into a role workspace using the same connected dataset.</p><Button className="guided-entry-button" onClick={onDemo}>Start Guided SIH Demo →</Button><div className="role-grid">{Object.entries(roleLabels).map(([key, label]) => <button className="role-choice" key={key} onClick={() => onSelect(getDemoUser(key))}><span>{({ government: "⌘", employer: "◈", institute: "▤", trainer: "♙", candidate: "◎" })[key]}</span><div><strong>{label}</strong><small>{getDemoUser(key)?.name} · Enter workspace →</small></div></button>)}</div><p className="demo-note">{storageMode === "firebase" ? "Shared Firebase persistence is active." : "Local demo persistence is active for this presentation."}</p></Card></div></main>;
+  return <main className="login-page"><div className="login-brand"><div className="brand-mark">SC</div><span>Skill<span>Connect</span></span></div><div className="login-copy"><div className="eyebrow">SIH 2026 · Maharashtra Multi-District Skill Intelligence</div><h1>Make skills visible.<br /><em>Make opportunity</em> actionable.</h1><p>A connected intelligence platform for government, employers, training partners, trainers, and candidates.</p><div className="login-proof"><span>01</span><div><b>One connected skills graph</b><small>Demand, supply, readiness, and outcomes in one workspace.</small></div></div><div className="login-proof"><span>02</span><div><b>Explainable decisions</b><small>Every recommendation traces back to current records.</small></div></div></div><div className="login-card-stack"><Card className="login-card"><div className="card-kicker">SECURE WORKSPACE</div><h2>Sign in to SkillConnect</h2><p className="muted">Use your organization account to open its role-based workspace.</p><form onSubmit={submit} className="login-form"><label>Email address<input type="email" autoComplete="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@organization.in" /></label><label>Password<input type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Enter your password" /></label>{error && <div className="login-error" role="alert">{error}</div>}<Button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button></form><p className="login-helper">Prototype sign-in uses the local session adapter. Demo password: <b>{DEMO_PASSWORD}</b></p></Card><Card className="demo-card"><div className="demo-heading"><div><div className="card-kicker">SIH PRESENTATION MODE</div><h2>Demo Access</h2></div><Badge tone="yellow">Fast entry</Badge></div><p className="muted">Jump into a role workspace using the same connected dataset.</p><Button className="guided-entry-button" onClick={onDemo}>Start Guided SIH Demo →</Button><div className="role-grid">{Object.entries(roleLabels).map(([key, label]) => <button className="role-choice" key={key} onClick={() => onSelect(getDemoUser(key))}><span>{({ government: "⌘", employer: "◈", institute: "▤", trainer: "♙", candidate: "◎" })[key]}</span><div><strong>{label}</strong><small>{getDemoUser(key)?.name} · Enter workspace →</small></div></button>)}</div><p className="demo-note">{storageMode === "firebase" ? "Shared Firebase persistence is active." : "Local demo persistence is active for this presentation."}</p></Card></div></main>;
 }
-function Sidebar({ role, view, setView, onLogout }) { return <aside className="sidebar"><div className="brand"><div className="brand-mark">SC</div><span>Skill<span>Connect</span></span></div><div className="workspace"><div className="avatar">{roleLabels[role][0]}</div><div><b>{roleLabels[role]}</b><small>Pune district pilot</small></div></div><nav>{navItems[role].map(([id, label, icon]) => <button className={view === id ? "active" : ""} key={id} onClick={() => setView(id)}><span>{icon}</span>{label}</button>)}</nav><div className="sidebar-bottom"><div className="pilot-status"><i /><span><b>System connected</b><small>{firebaseEnabled ? "Firebase production mode" : "Local demo mode"}</small></span></div><button className="logout" onClick={onLogout}>↪ Sign out</button></div></aside>; }
+function Sidebar({ role, view, setView, onLogout, data }) { return <aside className="sidebar"><div className="brand"><div className="brand-mark">SC</div><span>Skill<span>Connect</span></span></div><div className="workspace"><div className="avatar">{roleLabels[role][0]}</div><div><b>{roleLabels[role]}</b><small>{data?.districts?.length ? `${data.districts.length} districts · Maharashtra` : "Maharashtra Pilot"}</small></div></div><nav>{navItems[role].map(([id, label, icon]) => <button className={view === id ? "active" : ""} key={id} onClick={() => setView(id)}><span>{icon}</span>{label}</button>)}</nav><div className="sidebar-bottom"><div className="pilot-status"><i /><span><b>System connected</b><small>{firebaseEnabled ? "Firebase production mode" : "Local demo mode"}</small></span></div><button className="logout" onClick={onLogout}>↪ Sign out</button></div></aside>; }
 function Topbar({ role, data, onLogout }) { const user = data.users.find((item) => item.role === role); return <header className="topbar"><div className="crumb"><span>Workspace</span><b>/</b><strong>{roleLabels[role]}</strong></div><div className="top-actions"><div className="search">⌕ <span>Search platform</span><kbd>⌘ K</kbd></div><button className="icon-button">◔</button><button className="user-chip" onClick={onLogout}><span className="avatar small">{user?.name?.[0] || "U"}</span><span>{user?.name || "Demo user"}</span><b>⌄</b></button></div></header>; }
 
 function DecisionCard({ eyebrow, title, children, action }) { return <Card className="decision-card"><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><div className="decision-body">{children}</div>{action}</Card>; }
 function ExecutiveView({ data, setView }) {
   const metrics = executiveMetrics(data); const demand = demandRows(data); const capacity = capacityRows(data); const feedback = feedbackIntelligence(data); const maxDemand = Math.max(...demand.map((row) => row.openings), 1);
-  return <><PageHeader eyebrow="Government intelligence / Pune" title="District decision centre" description="A live operating view of demand, readiness, capacity, and outcomes for policy and delivery decisions." action={<Button onClick={() => setView("skill-intelligence")}>Open skill intelligence ↗</Button>} /><div className="metrics-grid executive-metrics"><Metric label="Industry openings" value={metrics.openings} detail="from employer consultations" tone="coral" /><Metric label="Active employers" value={metrics.employers} detail="with submitted demand" /><Metric label="High-demand skills" value={metrics.highDemandSkills} detail="above explainable threshold" tone="yellow" /><Metric label="Districts with gaps" value={metrics.districtsWithGaps} detail="capacity below demand" tone="coral" /><Metric label="Available capacity" value={metrics.availableSeats} detail="relevant training seats" /><Metric label="Capacity gap" value={metrics.capacityGap} detail="demand minus seats" tone="coral" /><Metric label="Course alignment" value={`${metrics.courseAlignment}%`} detail="average demanded skill coverage" tone="green" /><Metric label="Trainer readiness" value={`${metrics.trainerReadiness}%`} detail="average against demand" tone="blue" /><Metric label="Candidates" value={metrics.candidates} detail="in connected profiles" /><Metric label="Placements" value={metrics.placements} detail="verified outcomes" tone="green" /><Metric label="Employer feedback" value={metrics.feedback} detail="feedback records" tone="yellow" /></div><div className="dashboard-grid"><Card><div className="section-head"><div><h2>Top demanded skills</h2><p>Opening demand versus the highest current skill signal</p></div><Badge>Dynamic</Badge></div><div className="bars">{demand.slice().sort((a, b) => b.openings - a.openings).slice(0, 6).map((row) => <div className="bar-row" key={row.skillId}><div><span>{row.skill.name}</span><b>{row.openings} openings · {row.employers} employer(s)</b></div><Progress value={row.openings / maxDemand * 100} tone={row.level === "High" ? "coral" : "blue"} /></div>)}</div></Card><Card><div className="section-head"><div><h2>Demand versus capacity</h2><p>Skill-level capacity gaps needing attention</p></div><button className="text-button" onClick={() => setView("capacity")}>Details →</button></div><div className="bars">{capacity.slice().sort((a, b) => b.gap - a.gap).slice(0, 5).map((row) => <div className="bar-row" key={row.skillId}><div><span>{row.skill.name}</span><b>{row.gap > 0 ? `${row.gap} seat gap` : `${Math.abs(row.gap)} surplus`}</b></div><Progress value={row.openings ? row.availableSeats / row.openings * 100 : 0} tone={row.gap > 0 ? "coral" : "green"} /></div>)}</div></Card></div><div className="decision-grid"><DecisionCard eyebrow="Pune · capacity gap" title="Increase relevant training capacity"><p><b>{metrics.openings} openings</b> are competing for <b>{metrics.availableSeats} relevant seats</b>, creating a net gap of <b>{metrics.capacityGap}</b>.</p><p className="explain">What happened: demand exceeds supply. Why: current seats are distributed below employer demand. Action: increase seats for the highest-gap skills.</p><Button variant="secondary" onClick={() => setView("capacity")}>Review capacity</Button></DecisionCard><DecisionCard eyebrow="Employer feedback intelligence" title="Close the outcome loop"><p><b>{feedback.count}</b> feedback record(s) cover <b>{feedback.completionRate}%</b> of placements.</p><p className="explain">Strongest signal: {feedback.strongestSkill}. Weakest signal: {feedback.weakestSkill}. Most reported gap: {feedback.mostReportedGap}.</p><Button variant="secondary" onClick={() => setView("placements")}>Review outcomes</Button></DecisionCard></div></>;
+  const districtNames = data.districts?.map((d) => d.name).join(" · ") || "Maharashtra";
+  return <><PageHeader eyebrow={`Government intelligence / ${districtNames}`} title="District decision centre" description="A live operating view of demand, readiness, capacity, and outcomes for policy and delivery decisions." action={<Button onClick={() => setView("skill-intelligence")}>Open skill intelligence ↗</Button>} /><div className="metrics-grid executive-metrics"><Metric label="Industry openings" value={metrics.openings} detail="from employer consultations" tone="coral" /><Metric label="Active employers" value={metrics.employers} detail="with submitted demand" /><Metric label="High-demand skills" value={metrics.highDemandSkills} detail="above explainable threshold" tone="yellow" /><Metric label="Districts with gaps" value={metrics.districtsWithGaps} detail="capacity below demand" tone="coral" /><Metric label="Available capacity" value={metrics.availableSeats} detail="relevant training seats" /><Metric label="Capacity gap" value={metrics.capacityGap} detail="demand minus seats" tone="coral" /><Metric label="Course alignment" value={`${metrics.courseAlignment}%`} detail="average demanded skill coverage" tone="green" /><Metric label="Trainer readiness" value={`${metrics.trainerReadiness}%`} detail="average against demand" tone="blue" /><Metric label="Candidates" value={metrics.candidates} detail="in connected profiles" /><Metric label="Placements" value={metrics.placements} detail="verified outcomes" tone="green" /><Metric label="Employer feedback" value={metrics.feedback} detail="feedback records" tone="yellow" /></div><div className="dashboard-grid"><Card><div className="section-head"><div><h2>Top demanded skills</h2><p>Opening demand versus the highest current skill signal</p></div><Badge>Dynamic</Badge></div><div className="bars">{demand.slice().sort((a, b) => b.openings - a.openings).slice(0, 6).map((row) => <div className="bar-row" key={row.skillId}><div><span>{row.skill.name}</span><b>{row.openings} openings · {row.employers} employer(s)</b></div><Progress value={row.openings / maxDemand * 100} tone={row.level === "High" ? "coral" : "blue"} /></div>)}</div></Card><Card><div className="section-head"><div><h2>Demand versus capacity</h2><p>Skill-level capacity gaps needing attention</p></div><button className="text-button" onClick={() => setView("capacity")}>Details →</button></div><div className="bars">{capacity.slice().sort((a, b) => b.gap - a.gap).slice(0, 5).map((row) => <div className="bar-row" key={row.skillId}><div><span>{row.skill.name}</span><b>{row.gap > 0 ? `${row.gap} seat gap` : `${Math.abs(row.gap)} surplus`}</b></div><Progress value={row.openings ? row.availableSeats / row.openings * 100 : 0} tone={row.gap > 0 ? "coral" : "green"} /></div>)}</div></Card></div><div className="decision-grid"><DecisionCard eyebrow="State & District · capacity gap" title="Increase relevant training capacity"><p><b>{metrics.openings} openings</b> are competing for <b>{metrics.availableSeats} relevant seats</b>, creating a net gap of <b>{metrics.capacityGap}</b>.</p><p className="explain">What happened: demand exceeds supply. Why: current seats are distributed below employer demand. Action: increase seats for the highest-gap skills.</p><Button variant="secondary" onClick={() => setView("capacity")}>Review capacity</Button></DecisionCard><DecisionCard eyebrow="Employer feedback intelligence" title="Close the outcome loop"><p><b>{feedback.count}</b> feedback record(s) cover <b>{feedback.completionRate}%</b> of placements.</p><p className="explain">Strongest signal: {feedback.strongestSkill}. Weakest signal: {feedback.weakestSkill}. Most reported gap: {feedback.mostReportedGap}.</p><Button variant="secondary" onClick={() => setView("placements")}>Review outcomes</Button></DecisionCard></div></>;
 }
 function SkillIntelligenceView({ data }) {
   const [query, setQuery] = useState(""); const [status, setStatus] = useState("All"); const rows = skillIntelligenceRows(data).filter((row) => row.skill.name.toLowerCase().includes(query.toLowerCase()) && (status === "All" || row.status === status));
@@ -99,6 +120,48 @@ function LabourMarketView({ data }) {
         <Metric label="Ingested job postings" value={postingsOpenings} detail="from NCS & job boards" tone="green" />
         <Metric label="Monitored sectors" value={sectors.length} detail="state-level growth tracking" tone="yellow" />
       </div>
+
+      <Card className="chart-card" style={{ marginTop: "24px", marginBottom: "24px" }}>
+        <div className="section-head">
+          <div>
+            <div className="eyebrow">RECHARTS SECTOR TRENDS</div>
+            <h2>Annual Sector Expansion Rate (YoY Growth %)</h2>
+            <p>Monitored annual hiring growth across Maharashtra industry corridors</p>
+          </div>
+          <Badge tone="yellow">Macro Trend</Badge>
+        </div>
+        <div className="chart-container">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={sectors.map((s) => ({
+                name: s.sector.length > 20 ? `${s.sector.slice(0, 18)}…` : s.sector,
+                fullName: s.sector,
+                growth: s.yoyGrowthPercent,
+              }))}
+              margin={{ top: 10, right: 15, left: -10, bottom: 25 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e8efea" vertical={false} />
+              <XAxis dataKey="name" stroke="#6d7b77" fontSize={10} interval={0} angle={-15} textAnchor="end" height={40} />
+              <YAxis stroke="#6d7b77" fontSize={10} unit="%" />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const item = payload[0].payload;
+                    return (
+                      <div className="custom-chart-tooltip">
+                        <b>{item.fullName}</b>
+                        <p>Annual Growth: <span>+{item.growth}% YoY</span></p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Bar dataKey="growth" name="YoY Growth %" fill="var(--yellow)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
 
       <div className="section-head" style={{ marginTop: "24px" }}>
         <div>
@@ -427,18 +490,26 @@ function AlignmentView({ type, data }) {
 }
 
 function CapacityView({ type, data }) {
-  const rows = capacityRows(data);
-  const districts = districtDemand(data);
+  const districtList = data.districts || [{ id: "pune", name: "Pune" }];
+  const [planDistrict, setPlanDistrict] = useState(districtList[0]?.name || "Pune");
   const [showPlan, setShowPlan] = useState(false);
-  const [planDistrict, setPlanDistrict] = useState("Pune");
-  const plan = generateDistrictTrainingPlan(planDistrict, data);
+
+  const rows = capacityRows(data, planDistrict === "All" ? null : planDistrict);
+  const districts = districtDemand(data);
+  const targetDistrictForPlan = planDistrict === "All" ? districtList[0]?.name : planDistrict;
+  const plan = generateDistrictTrainingPlan(targetDistrictForPlan, data);
+
+  const districtLabel = planDistrict === "All" ? "All Districts (Maharashtra)" : planDistrict;
+  const currentDemand = planDistrict === "All"
+    ? Object.values(districts).reduce((s, v) => s + v, 0)
+    : (districts[planDistrict] || 0);
 
   return (
     <>
       <PageHeader
-        eyebrow="Government intelligence"
+        eyebrow={`Government intelligence / ${districtLabel}`}
         title={type === "district" ? "District intelligence" : "Training capacity"}
-        description="Demand minus available training capacity, calculated from connected Pune records."
+        description={`Demand minus available training capacity, calculated from connected ${districtLabel} records.`}
         action={
           type === "district" ? (
             <Button onClick={() => setShowPlan(!showPlan)}>
@@ -448,29 +519,28 @@ function CapacityView({ type, data }) {
         }
       />
 
-      {type === "district" && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", background: "#fff", padding: "12px 18px", borderRadius: "8px", border: "1px solid var(--line)" }}>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-            <label style={{ fontSize: "12px", fontWeight: "700", color: "var(--muted)" }}>Target District:</label>
-            <select
-              value={planDistrict}
-              onChange={(e) => setPlanDistrict(e.target.value)}
-              style={{ padding: "6px 12px", borderRadius: "5px", border: "1px solid var(--line)", background: "#fbfdfb", fontSize: "12px" }}
-            >
-              {(data.districts || [{ id: "pune", name: "Pune" }]).map((d) => (
-                <option key={d.id} value={d.name}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-          <Badge tone="green">SIH PS 26134 Core Deliverable</Badge>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", background: "#fff", padding: "12px 18px", borderRadius: "8px", border: "1px solid var(--line)" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <label style={{ fontSize: "12px", fontWeight: "700", color: "var(--muted)" }}>Filter District:</label>
+          <select
+            value={planDistrict}
+            onChange={(e) => setPlanDistrict(e.target.value)}
+            style={{ padding: "6px 12px", borderRadius: "5px", border: "1px solid var(--line)", background: "#fbfdfb", fontSize: "12px" }}
+          >
+            <option value="All">All Districts (State Overview)</option>
+            {districtList.map((d) => (
+              <option key={d.id} value={d.name}>{d.name}</option>
+            ))}
+          </select>
         </div>
-      )}
+        <Badge tone="green">{type === "district" ? "SIH PS 26134 Core Deliverable" : `${rows.length} skills tracked`}</Badge>
+      </div>
 
       {showPlan && <DistrictTrainingPlanReport plan={plan} onClose={() => setShowPlan(false)} />}
 
       <div className="metrics-grid">
-        <Metric label={`${planDistrict} demand`} value={districts[planDistrict] || 0} detail="openings from consultations & job postings" tone="coral" />
-        <Metric label="Available seats" value={rows.reduce((sum, row) => sum + row.availableSeats, 0)} detail="across required skills" />
+        <Metric label={`${districtLabel} demand`} value={currentDemand} detail="openings from consultations & job postings" tone="coral" />
+        <Metric label="Available seats" value={rows.reduce((sum, row) => sum + row.availableSeats, 0)} detail={`across ${rows.length} tracked skills`} />
         <Metric label="Net capacity gap" value={rows.reduce((sum, row) => sum + row.gap, 0)} detail="demand minus seats" tone="yellow" />
       </div>
 
@@ -501,10 +571,128 @@ function CapacityView({ type, data }) {
     </>
   );
 }
-function PeopleIntelligence({ type, data }) { const trainers = type === "trainers"; const items = trainers ? data.trainers : data.candidates; return <><PageHeader eyebrow="Government intelligence" title={trainers ? "Trainer intelligence" : "Candidate intelligence"} description="Readiness and fit are calculated against the same industry skill demand." /><Card><Table><thead><tr><th>{trainers ? "Trainer" : "Candidate"}</th><th>Readiness / fit</th><th>Matched skills</th><th>Missing skills</th><th>Status</th></tr></thead><tbody>{items.map((item) => { const result = trainers ? trainerAnalysis(item, data) : candidateAnalysis(item, data); return <tr key={item.id}><td><b>{item.name}</b><small className="table-sub">{item.experience || item.education}</small></td><td><b>{result.readiness || result.fit}%</b><Progress value={result.readiness || result.fit} tone={(result.readiness || result.fit) >= 80 ? "green" : "yellow"} /></td><td><SkillTags ids={result.matched} /></td><td>{result.missing.length ? skillNames(result.missing).join(", ") : "None"}</td><td><Badge tone={item.status === "Placed" ? "green" : "blue"}>{item.status || "Active"}</Badge></td></tr>; })}</tbody></Table></Card></>; }
-function PlacementOutcomes({ data }) { const feedback = feedbackSummary(data); return <><PageHeader eyebrow="Government intelligence" title="Placement outcomes" description="Verified placement records and employer feedback close the loop." /><div className="metrics-grid"><Metric label="Verified placements" value={data.placements.length} detail="real placement records" tone="green" /><Metric label="Feedback records" value={feedback.count} detail="submitted by employers" /><Metric label="Average rating" value={`${feedback.average} / 5`} detail="from connected feedback" tone="yellow" /></div><Card>{data.placements.length ? <Table><thead><tr><th>Candidate</th><th>Role</th><th>District</th><th>Employer</th><th>Outcome</th><th>Feedback</th></tr></thead><tbody>{data.placements.map((placement) => <tr key={placement.id}><td><b>{data.candidates.find((item) => item.id === placement.candidateId)?.name || "Unknown candidate"}</b></td><td>{placement.role}</td><td>{placement.district || "Pune"}</td><td>{data.employers.find((item) => item.id === placement.employerId)?.name || placement.employerId}</td><td><Badge tone="green">{placement.status}</Badge></td><td>{data.employerFeedback.some((item) => item.placementId === placement.id) ? "Received" : "Pending"}</td></tr>)}</tbody></Table> : <EmptyState title="No placements yet" body="Candidate placement records will appear here once submitted." />}</Card></>; }
+function PeopleIntelligence({ type, data }) { const trainers = type === "trainers"; const items = trainers ? data.trainers : data.candidates; return <><PageHeader eyebrow="Government intelligence" title={trainers ? "Trainer intelligence" : "Candidate intelligence"} description="Readiness and fit are calculated against the same industry skill demand." /><Card><Table><thead><tr><th>{trainers ? "Trainer" : "Candidate"}</th><th>Readiness / fit</th><th>Matched skills</th><th>Missing skills</th><th>Status</th></tr></thead><tbody>{items.map((item) => { const result = trainers ? trainerAnalysis(item, data) : candidateAnalysis(item, data); return <tr key={item.id}><td><b>{item.name}</b><small className="table-sub">{item.experience || item.education} · {item.district}</small></td><td><b>{result.readiness || result.fit}%</b><Progress value={result.readiness || result.fit} tone={(result.readiness || result.fit) >= 80 ? "green" : "yellow"} /></td><td><SkillTags ids={result.matched} entityId={item.id} data={data} /></td><td>{result.missing.length ? skillNames(result.missing).join(", ") : "None"}</td><td><Badge tone={item.status === "Placed" ? "green" : "blue"}>{item.status || "Active"}</Badge></td></tr>; })}</tbody></Table></Card></>; }
+function PlacementOutcomes({ data }) { const feedback = feedbackSummary(data); return <><PageHeader eyebrow="Government intelligence" title="Placement outcomes" description="Verified placement records and employer feedback close the loop." /><div className="metrics-grid"><Metric label="Verified placements" value={data.placements.length} detail="real placement records" tone="green" /><Metric label="Feedback records" value={feedback.count} detail="submitted by employers" /><Metric label="Average rating" value={`${feedback.average} / 5`} detail="from connected feedback" tone="yellow" /></div><Card>{data.placements.length ? <Table><thead><tr><th>Candidate</th><th>Role</th><th>District</th><th>Employer</th><th>Outcome</th><th>Feedback</th></tr></thead><tbody>{data.placements.map((placement) => <tr key={placement.id}><td><b>{data.candidates.find((item) => item.id === placement.candidateId)?.name || "Unknown candidate"}</b></td><td>{placement.role}</td><td>{placement.district || data.districts?.[0]?.name || "Pune"}</td><td>{data.employers.find((item) => item.id === placement.employerId)?.name || placement.employerId}</td><td><Badge tone="green">{placement.status}</Badge></td><td>{data.employerFeedback.some((item) => item.placementId === placement.id) ? "Received" : "Pending"}</td></tr>)}</tbody></Table> : <EmptyState title="No placements yet" body="Candidate placement records will appear here once submitted." />}</Card></>; }
 
-function ConsultationForm({ data, onAdd }) { const employer = data.employers[0]; const [form, setForm] = useState({ title: "Data Operations Analyst hiring cohort", openings: employer.openings, note: "Seeking job-ready analysts for the Pune delivery center.", role: employer.role, district: employer.district, requiredSkillIds: [...roleRequirements] }); const toggle = (id) => setForm((current) => ({ ...current, requiredSkillIds: current.requiredSkillIds.includes(id) ? current.requiredSkillIds.filter((skillId) => skillId !== id) : [...current.requiredSkillIds, id] })); return <><PageHeader eyebrow="Employer workspace" title="Create consultation" description="Submit structured demand that immediately feeds government intelligence." /><Card className="form-card"><div className="form-grid"><label>Company<input value={employer.name} readOnly /></label><label>District<input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label><label>Role<input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></label><label>Openings<input type="number" min="1" value={form.openings} onChange={(e) => setForm({ ...form, openings: e.target.value })} /></label><label className="full">Consultation title<input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><label className="full">Context and outcome<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label></div><div className="section-head"><div><h2>Required skills</h2><p>Uses canonical Skill IDs across every downstream module.</p></div><Badge>{form.requiredSkillIds.length} selected</Badge></div><div className="skill-pills">{skillCatalog.map((skill) => <button type="button" className={`skill-pill ${form.requiredSkillIds.includes(skill.id) ? "selected" : ""}`} key={skill.id} onClick={() => toggle(skill.id)}><span>{form.requiredSkillIds.includes(skill.id) ? "✓" : "+"}</span><b>{skill.name}</b></button>)}</div><div className="form-footer"><span className="muted">This submission updates Labour Market and Skill Intelligence.</span><Button disabled={!form.role || Number(form.openings) < 1 || !form.requiredSkillIds.length} onClick={() => onAdd({ type: "consultation", ...form })}>Submit consultation</Button></div></Card></>; }
+function ConsultationForm({ data, onAdd }) {
+  const [selectedEmployerId, setSelectedEmployerId] = useState(data.employers[0]?.id || "technova");
+  const employer = data.employers.find((e) => e.id === selectedEmployerId) || data.employers[0];
+  const [form, setForm] = useState({
+    title: `${employer.role} hiring cohort`,
+    openings: employer.openings || 10,
+    note: `Seeking job-ready talent for the ${employer.district} delivery hub.`,
+    role: employer.role,
+    district: employer.district,
+    requiredSkillIds: employer.skillIds ? [...employer.skillIds] : [...roleRequirements],
+  });
+  const toggle = (id) =>
+    setForm((current) => ({
+      ...current,
+      requiredSkillIds: current.requiredSkillIds.includes(id)
+        ? current.requiredSkillIds.filter((skillId) => skillId !== id)
+        : [...current.requiredSkillIds, id],
+    }));
+  return (
+    <>
+      <PageHeader
+        eyebrow="Employer workspace"
+        title="Create consultation"
+        description="Submit structured demand that immediately feeds government intelligence."
+      />
+      <Card className="form-card">
+        <div className="form-grid">
+          <label>
+            Company
+            <select
+              value={selectedEmployerId}
+              onChange={(e) => {
+                const empId = e.target.value;
+                setSelectedEmployerId(empId);
+                const emp = data.employers.find((item) => item.id === empId);
+                if (emp) {
+                  setForm((prev) => ({
+                    ...prev,
+                    role: emp.role,
+                    district: emp.district,
+                    openings: emp.openings || 10,
+                    title: `${emp.role} hiring cohort`,
+                    note: `Seeking job-ready talent for the ${emp.district} delivery hub.`,
+                    requiredSkillIds: emp.skillIds ? [...emp.skillIds] : prev.requiredSkillIds,
+                  }));
+                }
+              }}
+            >
+              {data.employers.map((emp) => (
+                <option key={emp.id} value={emp.id}>{emp.name} ({emp.district})</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            District
+            <select
+              value={form.district}
+              onChange={(e) => setForm({ ...form, district: e.target.value })}
+            >
+              {(data.districts || [{ name: "Pune" }]).map((d) => (
+                <option key={d.name || d} value={d.name || d}>{d.name || d}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Role
+            <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} />
+          </label>
+          <label>
+            Openings
+            <input
+              type="number"
+              min="1"
+              value={form.openings}
+              onChange={(e) => setForm({ ...form, openings: e.target.value })}
+            />
+          </label>
+          <label className="full">
+            Consultation title
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </label>
+          <label className="full">
+            Context and outcome
+            <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+          </label>
+        </div>
+        <div className="section-head">
+          <div>
+            <h2>Required skills</h2>
+            <p>Uses canonical Skill IDs across every downstream module.</p>
+          </div>
+          <Badge>{form.requiredSkillIds.length} selected</Badge>
+        </div>
+        <div className="skill-pills">
+          {skillCatalog.map((skill) => (
+            <button
+              type="button"
+              className={`skill-pill ${form.requiredSkillIds.includes(skill.id) ? "selected" : ""}`}
+              key={skill.id}
+              onClick={() => toggle(skill.id)}
+            >
+              <span>{form.requiredSkillIds.includes(skill.id) ? "✓" : "+"}</span>
+              <b>{skill.name}</b>
+            </button>
+          ))}
+        </div>
+        <div className="form-footer">
+          <span className="muted">This submission updates Labour Market and Skill Intelligence.</span>
+          <Button
+            disabled={!form.role || Number(form.openings) < 1 || !form.requiredSkillIds.length}
+            onClick={() => onAdd({ type: "consultation", employerId: selectedEmployerId, ...form })}
+          >
+            Submit consultation
+          </Button>
+        </div>
+      </Card>
+    </>
+  );
+}
 function FeedbackForm({ data, onAdd }) { const placement = data.placements[0]; const [form, setForm] = useState({ rating: 4, skillGaps: "", note: "" }); return <><PageHeader eyebrow="Employer workspace" title="Placement feedback" description="Share structured post-placement feedback that feeds outcome intelligence." /><Card className="form-card"><label>Placement<select><option>{placement?.role || "No placement available"} · {data.candidates.find((item) => item.id === placement?.candidateId)?.name || "Candidate"}</option></select></label><label>Overall rating<select value={form.rating} onChange={(e) => setForm({ ...form, rating: Number(e.target.value) })}><option value="5">5 - Excellent</option><option value="4">4 - Strong</option><option value="3">3 - Developing</option><option value="2">2 - Needs support</option><option value="1">1 - Poor</option></select></label><label>Skill gaps<input value={form.skillGaps} onChange={(e) => setForm({ ...form, skillGaps: e.target.value })} placeholder="e.g. stakeholder communication" /></label><label>Comments<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Share an observation about job readiness" /></label><div className="form-footer"><span className="muted">Feedback is attached to this placement record.</span><Button disabled={!placement || !form.note} onClick={() => onAdd({ type: "feedback", ...form, placementId: placement.id })}>Submit feedback</Button></div></Card></>; }
 
 function InstituteProposalsView({ data, onAdd }) {
@@ -835,12 +1023,13 @@ function EmployerProposalsView({ data, onAdd }) {
 function EmployerView({ view, data, onAdd }) {
   const employer = data.employers[0];
   const demand = demandRows(data);
+  const requiredProf = employer.requiredProficiency || data.requiredProficiency?.[employer.id];
   if (view === "create-consultation") return <ConsultationForm data={data} onAdd={onAdd} />;
   if (view === "consultations") return <><PageHeader eyebrow="Employer workspace" title="My consultations" description="Track demand submissions that feed the district intelligence layer." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ New consultation</Button>} /><Card><Table><thead><tr><th>Consultation</th><th>Role</th><th>District</th><th>Openings</th><th>Status</th></tr></thead><tbody>{data.consultations.filter((item) => item.employerId === employer.id).map((item) => <tr key={item.id}><td><b>{item.title}</b><small className="table-sub">Created {item.createdAt}</small></td><td>{item.role || item.title}</td><td>{item.district}</td><td>{item.openings}</td><td><Badge>{item.status}</Badge></td></tr>)}</tbody></Table></Card></>;
-  if (view === "required-skills") return <><PageHeader eyebrow="Employer workspace" title="Required skills" description="The same canonical requirements used by government, courses, trainers, and candidates." /><Card><div className="role-card"><div><div className="eyebrow">OPEN ROLE · {employer.openings} OPENINGS</div><h2>{employer.role}</h2><p>{employer.name} · {employer.district}</p></div><Badge tone="coral">Hiring now</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>;
+  if (view === "required-skills") return <><PageHeader eyebrow="Employer workspace" title="Required skills" description="The same canonical requirements used by government, courses, trainers, and candidates." /><Card><div className="role-card"><div><div className="eyebrow">OPEN ROLE · {employer.openings} OPENINGS</div><h2>{employer.role}</h2><p>{employer.name} · {employer.district}</p></div><Badge tone="coral">Hiring now</Badge></div><SkillTags ids={requiredIndustrySkills(data)} proficiencies={requiredProf} /></Card></>;
   if (view === "curriculum-proposals") return <EmployerProposalsView data={data} onAdd={onAdd} />;
   if (view === "feedback") return <FeedbackForm data={data} onAdd={onAdd} />;
-  return <><PageHeader eyebrow="Employer workspace" title={`Good morning, ${data.users.find((user) => user.role === "employer")?.name?.split(" ")[0] || "partner"}.`} description="Your submitted demand is visible across the Pune skills ecosystem." action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ Create consultation</Button>} /><div className="metrics-grid"><Metric label="Open role" value={employer.role} detail={`${totalOpenings(data)} openings across demand`} tone="coral" /><Metric label="Consultations" value={data.consultations.filter((item) => item.employerId === employer.id).length} detail="submitted demand records" /><Metric label="Demanded skills" value={demand.length} detail="canonical requirements" tone="green" /></div><Card><div className="section-head"><div><h2>Current hiring signal</h2><p>Live required skills from your consultations</p></div><Badge>Connected</Badge></div><SkillTags ids={requiredIndustrySkills(data)} /></Card></>;
+  return <><PageHeader eyebrow="Employer workspace" title={`Good morning, ${data.users.find((user) => user.role === "employer")?.name?.split(" ")[0] || "partner"}.`} description={`Your submitted demand is connected to the Maharashtra skill intelligence network (${employer.district} delivery hub).`} action={<Button onClick={() => onAdd({ type: "navigate", view: "create-consultation" })}>+ Create consultation</Button>} /><div className="metrics-grid"><Metric label="Open role" value={employer.role} detail={`${totalOpenings(data)} openings across demand`} tone="coral" /><Metric label="Consultations" value={data.consultations.filter((item) => item.employerId === employer.id).length} detail="submitted demand records" /><Metric label="Demanded skills" value={demand.length} detail="canonical requirements" tone="green" /></div><Card><div className="section-head"><div><h2>Current hiring signal</h2><p>Live required skills with proficiency tiers from your consultations</p></div><Badge>Connected</Badge></div><SkillTags ids={requiredIndustrySkills(data)} proficiencies={requiredProf} /></Card></>;
 }
 
 function InstituteView({ view, data, onAdd }) {
@@ -928,11 +1117,342 @@ function InstituteView({ view, data, onAdd }) {
   );
 }
 
-function TrainerView({ view, data, onAdd }) { const trainer = data.trainers[0]; const result = trainerAnalysis(trainer, data); if (view === "skills") return <><PageHeader eyebrow="Trainer workspace" title="My skills" description="Update the same canonical skills used in trainer intelligence." action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>+ Add Power BI</Button>} /><Card><div className="profile-heading"><div className="avatar large">R</div><div><h2>{trainer.name}</h2><p>{trainer.experience} experience · Pune Digital Academy</p></div></div><SkillTags ids={trainer.skillIds} /></Card></>; if (view === "gaps" || view === "upskilling") return <><PageHeader eyebrow="Trainer workspace" title={view === "gaps" ? "Skill gaps" : "Recommended upskilling"} description="Missing skills are derived by comparing trainer skills with live employer demand." /><Card><div className="section-head"><div><h2>{result.missing.length} skills to strengthen</h2><p>Required industry skills not present in this trainer profile</p></div><Badge tone="yellow">Explainable</Badge></div>{result.missing.map((skillId) => <div className="recommendation" key={skillId}><span className="action-icon yellow">✦</span><div><b>{getSkill(skillId).name}</b><p>Demand is present and no match exists in this trainer profile.</p></div><Button variant="secondary" onClick={() => onAdd({ type: "trainer-skill", skillId })}>Add to profile</Button></div>)}</Card></>; return <><PageHeader eyebrow="Trainer workspace" title={`Hello, ${trainer.name.split(" ")[0]}.`} description="Your readiness is calculated against current consultation demand." action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>Update skills</Button>} /><div className="metrics-grid"><Metric label="Profile readiness" value={`${result.readiness}%`} detail="matched demand skills" tone="green" /><Metric label="Missing skills" value={result.missing.length} detail="recommended for upskilling" tone="coral" /><Metric label="Skills verified" value={trainer.skillIds.length} detail="canonical platform skills" tone="blue" /></div><Card><div className="recommendation"><span className="action-icon yellow">✦</span><div><b>{result.missing.length ? `Add ${getSkill(result.missing[0]).name} to your profile` : "Profile covers current demand"}</b><p>{result.missing.length ? "This recommendation is generated from the employer consultation skill set." : "No missing skills detected against current demand."}</p></div>{result.missing.length > 0 && <Button onClick={() => onAdd({ type: "trainer-skill", skillId: result.missing[0] })}>Add skill</Button>}</div></Card></>; }
+function TrainerView({ view, data, onAdd }) {
+  const trainer = data.trainers[0];
+  const result = trainerAnalysis(trainer, data);
+  if (view === "skills") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Trainer workspace"
+          title="My skills"
+          description="Update the same canonical skills used in trainer intelligence."
+          action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>+ Add Power BI</Button>}
+        />
+        <Card>
+          <div className="profile-heading">
+            <div className="avatar large">R</div>
+            <div>
+              <h2>{trainer.name}</h2>
+              <p>{trainer.experience} experience · {trainer.district || "Maharashtra"}</p>
+            </div>
+          </div>
+          <SkillTags ids={trainer.skillIds} entityId={trainer.id} data={data} />
+        </Card>
+      </>
+    );
+  }
+  if (view === "gaps" || view === "upskilling") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Trainer workspace"
+          title={view === "gaps" ? "Skill gaps" : "Recommended upskilling"}
+          description="Missing skills are derived by comparing trainer skills with live employer demand."
+        />
+        <Card>
+          <div className="section-head">
+            <div>
+              <h2>{result.missing.length} skills to strengthen</h2>
+              <p>Required industry skills not present in this trainer profile</p>
+            </div>
+            <Badge tone="yellow">Explainable</Badge>
+          </div>
+          {result.missing.map((skillId) => (
+            <div className="recommendation" key={skillId}>
+              <span className="action-icon yellow">✦</span>
+              <div>
+                <b>{getSkill(skillId).name}</b>
+                <p>Demand is present and no match exists in this trainer profile.</p>
+              </div>
+              <Button variant="secondary" onClick={() => onAdd({ type: "trainer-skill", skillId })}>
+                Add to profile
+              </Button>
+            </div>
+          ))}
+        </Card>
+      </>
+    );
+  }
+  return (
+    <>
+      <PageHeader
+        eyebrow="Trainer workspace"
+        title={`Hello, ${trainer.name.split(" ")[0]}.`}
+        description="Your readiness is calculated against current consultation demand."
+        action={<Button onClick={() => onAdd({ type: "trainer-skill", skillId: "power-bi" })}>Update skills</Button>}
+      />
+      <div className="metrics-grid">
+        <Metric label="Profile readiness" value={`${result.readiness}%`} detail="matched demand skills" tone="green" />
+        <Metric label="Missing skills" value={result.missing.length} detail="recommended for upskilling" tone="coral" />
+        <Metric label="Skills verified" value={trainer.skillIds.length} detail="canonical platform skills" tone="blue" />
+      </div>
+      <Card>
+        <div className="recommendation">
+          <span className="action-icon yellow">✦</span>
+          <div>
+            <b>{result.missing.length ? `Add ${getSkill(result.missing[0]).name} to your profile` : "Profile covers current demand"}</b>
+            <p>{result.missing.length ? "This recommendation is generated from the employer consultation skill set." : "No missing skills detected against current demand."}</p>
+          </div>
+          {result.missing.length > 0 && (
+            <Button onClick={() => onAdd({ type: "trainer-skill", skillId: result.missing[0] })}>Add skill</Button>
+          )}
+        </div>
+      </Card>
+    </>
+  );
+}
 
-function CandidateHome({ candidate, result, data, onAdd }) { return <><PageHeader eyebrow="Candidate workspace" title={`Welcome back, ${candidate.name.split(" ")[0]}.`} description="Your next step is calculated from your profile and current employer demand." action={<Button onClick={() => onAdd({ type: "navigate", view: "role-fit" })}>Open role fit</Button>} /><Card className="candidate-hero"><div><div className="eyebrow">TARGET ROLE</div><h2>Data Operations Analyst</h2><p>TechNova Solutions · Pune · {totalOpenings(data)} current openings</p></div><div className="candidate-score"><strong>{result.fit}%</strong><span>current role fit</span></div></Card><div className="dashboard-grid"><Card><div className="section-head"><div><h2>You have</h2><p>Skills matched to the target role</p></div><Badge tone="green">{result.matched.length} matched</Badge></div><SkillTags ids={result.matched} /></Card><Card><div className="section-head"><div><h2>You are missing</h2><p>Skills required by current demand</p></div><Badge tone="coral">{result.missing.length} to build</Badge></div><SkillTags ids={result.missing} /></Card></div><DecisionCard eyebrow="Recommended next step" title={result.missing.length ? `Complete a ${getSkill(result.missing[0]).name}-focused course` : "You are ready for the role signal"}><p>You match <b>{result.matched.length} of {result.matched.length + result.missing.length}</b> required skills. {result.missing.length ? `You are missing ${getSkill(result.missing[0]).name}, so courses covering that gap are ranked first.` : "Keep your profile current as employer demand changes."}</p><Button onClick={() => onAdd({ type: "navigate", view: result.missing.length ? "courses" : "role-fit" })}>{result.missing.length ? "See recommended courses" : "Review role fit"}</Button></DecisionCard></>; }
-function CandidateView({ view, data, onAdd }) { const candidate = data.candidates[0]; const result = candidateAnalysis(candidate, data); if (view === "overview") return <CandidateHome candidate={candidate} result={result} data={data} onAdd={onAdd} />; if (view === "profile") return <><PageHeader eyebrow="Candidate workspace" title="My profile" description="Your skills connect to roles, courses, pathways, and placements." /><Card><div className="profile-heading"><div className="avatar large">I</div><div><h2>{candidate.name}</h2><p>{candidate.education} · {candidate.district}</p></div><Badge tone="yellow">{candidate.status}</Badge></div><div className="profile-facts"><div><small>Target role</small><b>Data Operations Analyst</b></div><div><small>Role fit</small><b>{result.fit}%</b></div><div><small>Profile skills</small><b>{candidate.skillIds.length}</b></div></div></Card></>; if (view === "skills" || view === "skill-gap") return <><PageHeader eyebrow="Candidate workspace" title={view === "skills" ? "My skills" : "Skill gap"} description={view === "skills" ? "Manage canonical skills in your candidate profile." : "Missing skills are derived from current employer requirements."} action={<Button onClick={() => onAdd({ type: "candidate-skill", skillId: result.missing[0] || "power-bi" })}>+ Add next skill</Button>} /><Card>{view === "skills" ? <SkillTags ids={candidate.skillIds} /> : result.missing.map((skillId) => <div className="recommendation" key={skillId}><span className="action-icon coral">!</span><div><b>{getSkill(skillId).name}</b><p>Required by current industry demand and missing from your profile.</p></div><Badge tone="coral">Priority</Badge></div>)}</Card></>; if (view === "role-fit") return <><PageHeader eyebrow="Candidate workspace" title="Role fit" description="Matched candidate skills divided by total required role skills." /><Card className="fit-card"><div className="fit-score"><strong>{result.fit}<span>%</span></strong><div><h2>Data Operations Analyst</h2><p>TechNova Solutions · Pune</p></div></div><Progress value={result.fit} tone="green" /><div className="fit-breakdown"><span><i className="dot green" /> {result.matched.length} matched skills</span><span><i className="dot coral" /> {result.missing.length} skills to build</span></div></Card></>; if (view === "courses" || view === "pathway") return <><PageHeader eyebrow="Candidate workspace" title={view === "courses" ? "Recommended courses" : "Training pathway"} description="Courses are ranked by how many current skill gaps they cover." /><div className="course-grid">{data.courses.map((course) => { const analysis = courseAnalysis(course, data); const coveredGaps = analysis.covered.filter((skillId) => result.missing.includes(skillId)); return <Card key={course.id}><div className="course-title"><span className="course-icon">▤</span><div><h2>{course.name}</h2><p>{course.duration} · {course.mode}</p></div></div><Badge tone={coveredGaps.length ? "green" : "gray"}>{coveredGaps.length} gap skill(s) covered</Badge><p className="explain">Recommended because it covers {coveredGaps.length} of your {result.missing.length} missing skill(s): {coveredGaps.length ? skillNames(coveredGaps).join(", ") : "none"}.</p><SkillTags ids={course.skillIds} /><Button variant="secondary" onClick={() => onAdd({ type: "enrol", courseId: course.id })}>{view === "pathway" ? "Add to pathway" : "View course"}</Button></Card>; })}</div></>; if (view === "placements") return <PlacementForm data={data} onAdd={onAdd} />; return <CandidateHome candidate={candidate} result={result} data={data} onAdd={onAdd} />; }
-function PlacementForm({ data, onAdd }) { const [form, setForm] = useState({ candidateId: data.candidates[0]?.id || "", employerId: data.employers[0]?.id || "", role: data.employers[0]?.role || "Data Operations Analyst", district: "Pune", status: "Verified", placedAt: today }); return <><PageHeader eyebrow="Candidate workspace" title="Placement status" description="Record a verified placement and close the loop with employer feedback." /><Card className="form-card"><label>Candidate<select value={form.candidateId} onChange={(e) => setForm({ ...form, candidateId: e.target.value })}>{data.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label><label>Employer<select value={form.employerId} onChange={(e) => setForm({ ...form, employerId: e.target.value })}>{data.employers.map((employer) => <option key={employer.id} value={employer.id}>{employer.name}</option>)}</select></label><label>Role<input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></label><label>District<input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} /></label><div className="form-footer"><span className="muted">This record will appear in Government Placement Outcomes.</span><Button onClick={() => onAdd({ type: "placement", ...form })}>Mark as placed</Button></div></Card></>; }
+function CandidateHome({ candidate, result, data, onAdd }) {
+  return (
+    <>
+      <PageHeader
+        eyebrow="Candidate workspace"
+        title={`Welcome back, ${candidate.name.split(" ")[0]}.`}
+        description="Your next step is calculated from your profile and current employer demand."
+        action={<Button onClick={() => onAdd({ type: "navigate", view: "role-fit" })}>Open role fit</Button>}
+      />
+      <Card className="candidate-hero">
+        <div>
+          <div className="eyebrow">TARGET ROLE</div>
+          <h2>{candidate.targetRole || "Data Operations Analyst"}</h2>
+          <p>{candidate.preferredEmployer || "TechNova Solutions"} · {candidate.district} · {totalOpenings(data)} current openings</p>
+        </div>
+        <div className="candidate-score">
+          <strong>{result.fit}%</strong>
+          <span>current role fit</span>
+        </div>
+      </Card>
+      <div className="dashboard-grid">
+        <Card>
+          <div className="section-head">
+            <div>
+              <h2>You have</h2>
+              <p>Skills matched to the target role</p>
+            </div>
+            <Badge tone="green">{result.matched.length} matched</Badge>
+          </div>
+          <SkillTags ids={result.matched} entityId={candidate.id} data={data} />
+        </Card>
+        <Card>
+          <div className="section-head">
+            <div>
+              <h2>You are missing</h2>
+              <p>Skills required by current demand</p>
+            </div>
+            <Badge tone="coral">{result.missing.length} to build</Badge>
+          </div>
+          <SkillTags ids={result.missing} />
+        </Card>
+      </div>
+      <DecisionCard
+        eyebrow="Recommended next step"
+        title={result.missing.length ? `Complete a ${getSkill(result.missing[0]).name}-focused course` : "You are ready for the role signal"}
+      >
+        <p>
+          You match <b>{result.matched.length} of {result.matched.length + result.missing.length}</b> required skills. {result.missing.length ? `You are missing ${getSkill(result.missing[0]).name}, so courses covering that gap are ranked first.` : "Keep your profile current as employer demand changes."}
+        </p>
+        <Button onClick={() => onAdd({ type: "navigate", view: result.missing.length ? "courses" : "role-fit" })}>
+          {result.missing.length ? "See recommended courses" : "Review role fit"}
+        </Button>
+      </DecisionCard>
+    </>
+  );
+}
+
+function CandidateView({ view, data, onAdd }) {
+  const candidate = data.candidates[0];
+  const result = candidateAnalysis(candidate, data);
+  if (view === "overview") return <CandidateHome candidate={candidate} result={result} data={data} onAdd={onAdd} />;
+  if (view === "profile") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Candidate workspace"
+          title="My profile"
+          description="Your skills connect to roles, courses, pathways, and placements."
+        />
+        <Card>
+          <div className="profile-heading">
+            <div className="avatar large">I</div>
+            <div>
+              <h2>{candidate.name}</h2>
+              <p>{candidate.education} · {candidate.district}</p>
+            </div>
+            <Badge tone="yellow">{candidate.status}</Badge>
+          </div>
+          <div className="profile-facts">
+            <div><small>Target role</small><b>{candidate.targetRole || "Data Operations Analyst"}</b></div>
+            <div><small>Role fit</small><b>{result.fit}%</b></div>
+            <div><small>Profile skills</small><b>{candidate.skillIds.length}</b></div>
+          </div>
+          <div style={{ marginTop: "16px" }}>
+            <SkillTags ids={candidate.skillIds} entityId={candidate.id} data={data} />
+          </div>
+        </Card>
+      </>
+    );
+  }
+  if (view === "skills" || view === "skill-gap") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Candidate workspace"
+          title={view === "skills" ? "My skills" : "Skill gap"}
+          description={view === "skills" ? "Manage canonical skills in your candidate profile." : "Missing skills are derived from current employer requirements."}
+          action={<Button onClick={() => onAdd({ type: "candidate-skill", skillId: result.missing[0] || "power-bi" })}>+ Add next skill</Button>}
+        />
+        <Card>
+          {view === "skills" ? (
+            <SkillTags ids={candidate.skillIds} entityId={candidate.id} data={data} />
+          ) : (
+            result.missing.map((skillId) => (
+              <div className="recommendation" key={skillId}>
+                <span className="action-icon coral">!</span>
+                <div>
+                  <b>{getSkill(skillId).name}</b>
+                  <p>Required by current industry demand and missing from your profile.</p>
+                </div>
+                <Badge tone="coral">Priority</Badge>
+              </div>
+            ))
+          )}
+        </Card>
+      </>
+    );
+  }
+  if (view === "role-fit") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Candidate workspace"
+          title="Role fit"
+          description="Matched candidate skills divided by total required role skills."
+        />
+        <Card className="fit-card">
+          <div className="fit-score">
+            <strong>{result.fit}<span>%</span></strong>
+            <div>
+              <h2>{candidate.targetRole || "Data Operations Analyst"}</h2>
+              <p>{candidate.preferredEmployer || "TechNova Solutions"} · {candidate.district}</p>
+            </div>
+          </div>
+          <Progress value={result.fit} tone="green" />
+          <div className="fit-breakdown">
+            <span><i className="dot green" /> {result.matched.length} matched skills</span>
+            <span><i className="dot coral" /> {result.missing.length} skills to build</span>
+          </div>
+        </Card>
+      </>
+    );
+  }
+  if (view === "courses" || view === "pathway") {
+    return (
+      <>
+        <PageHeader
+          eyebrow="Candidate workspace"
+          title={view === "courses" ? "Recommended courses" : "Training pathway"}
+          description="Courses are ranked by how many current skill gaps they cover."
+        />
+        <div className="course-grid">
+          {data.courses.map((course) => {
+            const analysis = courseAnalysis(course, data);
+            const coveredGaps = analysis.covered.filter((skillId) => result.missing.includes(skillId));
+            return (
+              <Card key={course.id}>
+                <div className="course-title">
+                  <span className="course-icon">▤</span>
+                  <div>
+                    <h2>{course.name}</h2>
+                    <p>{course.duration} · {course.mode}</p>
+                  </div>
+                </div>
+                <Badge tone={coveredGaps.length ? "green" : "gray"}>
+                  {coveredGaps.length} gap skill(s) covered
+                </Badge>
+                <p className="explain">
+                  Recommended because it covers {coveredGaps.length} of your {result.missing.length} missing skill(s):{" "}
+                  {coveredGaps.length ? skillNames(coveredGaps).join(", ") : "none"}.
+                </p>
+                <SkillTags ids={course.skillIds} />
+                <Button variant="secondary" onClick={() => onAdd({ type: "enrol", courseId: course.id })}>
+                  {view === "pathway" ? "Add to pathway" : "View course"}
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+  if (view === "placements") return <PlacementForm data={data} onAdd={onAdd} />;
+  return <CandidateHome candidate={candidate} result={result} data={data} onAdd={onAdd} />;
+}
+
+function PlacementForm({ data, onAdd }) {
+  const [form, setForm] = useState({
+    candidateId: data.candidates[0]?.id || "",
+    employerId: data.employers[0]?.id || "",
+    role: data.employers[0]?.role || "Data Operations Analyst",
+    district: data.candidates[0]?.district || data.districts?.[0]?.name || "Pune",
+    status: "Verified",
+    placedAt: today,
+  });
+  return (
+    <>
+      <PageHeader
+        eyebrow="Candidate workspace"
+        title="Placement status"
+        description="Record a verified placement and close the loop with employer feedback."
+      />
+      <Card className="form-card">
+        <label>
+          Candidate
+          <select
+            value={form.candidateId}
+            onChange={(e) => {
+              const cand = data.candidates.find((c) => c.id === e.target.value);
+              setForm({ ...form, candidateId: e.target.value, district: cand?.district || form.district });
+            }}
+          >
+            {data.candidates.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.name} ({candidate.district})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Employer
+          <select value={form.employerId} onChange={(e) => setForm({ ...form, employerId: e.target.value })}>
+            {data.employers.map((employer) => (
+              <option key={employer.id} value={employer.id}>
+                {employer.name} ({employer.district})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Role
+          <input value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} />
+        </label>
+        <label>
+          District
+          <select value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })}>
+            {(data.districts || [{ name: "Pune" }]).map((d) => {
+              const name = d.name || d;
+              return <option key={name} value={name}>{name}</option>;
+            })}
+          </select>
+        </label>
+        <div className="form-footer">
+          <span className="muted">This record will appear in Government Placement Outcomes.</span>
+          <Button onClick={() => onAdd({ type: "placement", ...form })}>Mark as placed</Button>
+        </div>
+      </Card>
+    </>
+  );
+}
 
 export default function Home() {
   const persistedRole = useSyncExternalStore(emptySubscribe, storedRole, emptySnapshot); const persistedData = useSyncExternalStore(emptySubscribe, storedData, emptyDataSnapshot); const persistedGuided = useSyncExternalStore(emptySubscribe, storedGuided, emptyGuidedSnapshot); const [roleOverride, setRoleOverride] = useState(null); const [dataOverride, setDataOverride] = useState(null); const [guidedOverride, setGuidedOverride] = useState(null); const [view, setView] = useState("overview"); const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const role = roleOverride ?? persistedRole; const guided = guidedOverride ?? persistedGuided; const data = dataOverride ?? normalizeData(persistedData ? JSON.parse(persistedData) : clone());
@@ -1053,5 +1573,5 @@ export default function Home() {
   };
   const content = role === "government" ? <GovernmentView view={view} data={data} setView={setView} /> : role === "employer" ? <EmployerView view={view} data={data} onAdd={onAdd} /> : role === "institute" ? <InstituteView view={view} data={data} onAdd={onAdd} /> : role === "trainer" ? <TrainerView view={view} data={data} onAdd={onAdd} /> : <CandidateView view={view} data={data} onAdd={onAdd} />;
   if (guided) return <GuidedDemo data={data} onExit={() => { setGuidedOverride(false); window.localStorage.removeItem("skillconnect-guided-step"); window.history.replaceState({}, "", window.location.pathname); }} />;
-  if (!role) return <LoginPage onSelect={selectRole} onDemo={() => setGuidedOverride(true)} />; return <div className="app-shell"><Sidebar role={role} view={view} setView={setView} onLogout={() => { window.localStorage.removeItem("skillconnect-role"); setRoleOverride(""); }} /><div className="main-shell"><Topbar role={role} data={data} onLogout={() => { window.localStorage.removeItem("skillconnect-role"); setRoleOverride(""); }} /><main className="content">{content}</main></div>{busy && <div className="toast"><span>…</span>Saving change</div>}{notice && !busy && <div className="toast"><span>✓</span>{notice}</div>}</div>;
+  if (!role) return <LoginPage onSelect={selectRole} onDemo={() => setGuidedOverride(true)} />; return <div className="app-shell"><Sidebar role={role} view={view} setView={setView} data={data} onLogout={() => { window.localStorage.removeItem("skillconnect-role"); setRoleOverride(""); }} /><div className="main-shell"><Topbar role={role} data={data} onLogout={() => { window.localStorage.removeItem("skillconnect-role"); setRoleOverride(""); }} /><main className="content">{content}</main></div>{busy && <div className="toast"><span>…</span>Saving change</div>}{notice && !busy && <div className="toast"><span>✓</span>{notice}</div>}</div>;
 }
